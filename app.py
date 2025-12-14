@@ -2,8 +2,32 @@ import os
 import numpy as np
 import pandas as pd
 
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_file
 import joblib
+import io
+import base64
+try:
+    from fpdf import FPDF
+    FPDF_AVAILABLE = True
+except ImportError:
+    try:
+        from fpdf2 import FPDF
+        FPDF_AVAILABLE = True
+    except ImportError:
+        FPDF_AVAILABLE = False
+        print("[WARN] fpdf not available - PDF export disabled")
+
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Circle
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    matplotlib = None
+    plt = None
+    MATPLOTLIB_AVAILABLE = False
+    print("[WARN] matplotlib not available - PDF charts disabled")
 
 import smtplib
 from email.mime.text import MIMEText
@@ -581,14 +605,9 @@ def api_college():
         if df.empty:
             return jsonify({"success": False, "message": "No data available"}), 400
         
-        # Sample data if too large
-        original_size = len(df)
-        if len(df) > 500:
-            df = df.sample(min(500, len(df)), random_state=42)
-
+        # Use all students for analytics
         res = analyze_subset(df)
-        res["sample_size"] = int(len(df))
-        res["total_size"] = int(original_size)
+        res["total_size"] = int(len(df))
         return jsonify(to_py({"success": True, **res}))
     except Exception as e:
         print(f"[ERR] College analysis: {e}")
@@ -755,20 +774,88 @@ def generate_batch_insights(batch_year, total, high_risk_pct, avg_perf, top_perf
 def api_send_alert():
     data = request.get_json(silent=True) or {}
     to_email = data.get("email", "ashokkumarboya999@gmail.com")  # Default mentor email
-    subject = data.get("subject")
-    body = data.get("body")
-
-    if not (subject and body):
-        return jsonify({"success": False, "message": "Missing subject/body"}), 400
+    
+    # Extract student data for HTML email
+    student_data = data.get("student", {})
+    predictions = data.get("predictions", {})
+    features = data.get("features", {})
+    
+    # Generate reason for alert based on predictions
+    reasons = []
+    if predictions.get("performance_label") == "poor":
+        reasons.append("Poor academic performance detected")
+    elif predictions.get("performance_label") == "medium":
+        reasons.append("Below-average academic performance")
+    
+    if predictions.get("risk_label") == "high":
+        reasons.append("High academic risk identified")
+    
+    if predictions.get("dropout_label") == "high":
+        reasons.append("High dropout probability detected")
+    
+    if features.get("attendance_pct", 100) < 75:
+        reasons.append("Low attendance rate")
+    
+    if features.get("internal_pct", 100) < 60:
+        reasons.append("Poor internal assessment performance")
+    
+    alert_reason = "; ".join(reasons) if reasons else "Academic performance requires attention"
+    
+    # Create HTML email content
+    subject = "Student Performance Alert – EduMetric"
+    
+    html_body = f"""
+<div style="font-family: Arial, sans-serif; background: #f4f6fb; padding: 20px;">
+  <div style="max-width: 600px; margin: auto; background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+    <h2 style="color: #6a11cb; margin-bottom: 20px;">🚨 EduMetric – Student Alert</h2>
+    
+    <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px;">
+      <p style="margin: 0; font-weight: bold; color: #856404;">Immediate Mentor Attention Required</p>
+    </div>
+    
+    <h3 style="color: #495057; border-bottom: 2px solid #e9ecef; padding-bottom: 10px;">Student Details</h3>
+    <table style="width: 100%; margin-bottom: 20px;">
+      <tr><td style="padding: 5px 0; font-weight: bold;">Name:</td><td style="padding: 5px 0;">{student_data.get('NAME', 'N/A')}</td></tr>
+      <tr><td style="padding: 5px 0; font-weight: bold;">Register Number:</td><td style="padding: 5px 0;">{student_data.get('RNO', 'N/A')}</td></tr>
+      <tr><td style="padding: 5px 0; font-weight: bold;">Department:</td><td style="padding: 5px 0;">{student_data.get('DEPT', 'N/A')}</td></tr>
+      <tr><td style="padding: 5px 0; font-weight: bold;">Year:</td><td style="padding: 5px 0;">{student_data.get('YEAR', 'N/A')}</td></tr>
+      <tr><td style="padding: 5px 0; font-weight: bold;">Batch Year:</td><td style="padding: 5px 0;">{student_data.get('batch_year', 'N/A')}</td></tr>
+    </table>
+    
+    <h3 style="color: #495057; border-bottom: 2px solid #e9ecef; padding-bottom: 10px;">Academic Summary</h3>
+    <table style="width: 100%; margin-bottom: 20px;">
+      <tr><td style="padding: 5px 0; font-weight: bold;">Performance Level:</td><td style="padding: 5px 0; color: #dc3545; font-weight: bold;">{predictions.get('performance_label', 'unknown').upper()}</td></tr>
+      <tr><td style="padding: 5px 0; font-weight: bold;">Risk Level:</td><td style="padding: 5px 0; color: #fd7e14; font-weight: bold;">{predictions.get('risk_label', 'unknown').upper()}</td></tr>
+      <tr><td style="padding: 5px 0; font-weight: bold;">Dropout Probability:</td><td style="padding: 5px 0; color: #dc3545; font-weight: bold;">{predictions.get('dropout_label', 'unknown').upper()}</td></tr>
+      <tr><td style="padding: 5px 0; font-weight: bold;">Attendance:</td><td style="padding: 5px 0;">{features.get('attendance_pct', 0):.1f}%</td></tr>
+      <tr><td style="padding: 5px 0; font-weight: bold;">Internal Marks:</td><td style="padding: 5px 0;">{features.get('internal_pct', 0):.1f}%</td></tr>
+    </table>
+    
+    <div style="background: #f8d7da; border-left: 4px solid #dc3545; padding: 15px; margin-bottom: 20px;">
+      <p style="margin: 0; font-weight: bold; color: #721c24;">Reason for Alert:</p>
+      <p style="margin: 5px 0 0 0; color: #721c24;">{alert_reason}</p>
+    </div>
+    
+    <div style="background: #d1ecf1; border-left: 4px solid #17a2b8; padding: 15px; margin-bottom: 20px;">
+      <p style="margin: 0; font-weight: bold; color: #0c5460;">Suggested Action:</p>
+      <p style="margin: 5px 0 0 0; color: #0c5460;">Please review the student's academic progress and consider appropriate mentoring or intervention.</p>
+    </div>
+    
+    <hr style="border: none; border-top: 1px solid #e9ecef; margin: 20px 0;">
+    
+    <p style="color: #6c757d; font-size: 14px; margin: 0;">Regards,<br><strong>EduMetric Analytics System</strong><br><em>(Automated Notification – Do Not Reply)</em></p>
+  </div>
+</div>
+"""
 
     FROM = "ashokkumarboya93@gmail.com"
     PASS = "lubwbacntoubetxb"  # use env var in real project
 
-    msg = MIMEMultipart()
+    # Use MIMEText with "html" for proper HTML email rendering
+    msg = MIMEText(html_body, "html")
     msg["From"] = FROM
     msg["To"] = to_email
     msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain"))
 
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587)
@@ -776,7 +863,7 @@ def api_send_alert():
         server.login(FROM, PASS)
         server.send_message(msg)
         server.quit()
-        return jsonify({"success": True})
+        return jsonify({"success": True, "message": "Alert sent successfully"})
     except Exception as e:
         print("[ERR] send alert:", e)
         return jsonify({"success": False, "message": str(e)}), 500
@@ -1570,6 +1657,430 @@ def api_analytics_drilldown():
     except Exception as e:
         print(f"[ERR] Universal drilldown: {e}")
         return jsonify({"success": False, "message": f"Drilldown failed: {str(e)}"}), 500
+
+if FPDF_AVAILABLE:
+    class EnhancedPDF(FPDF):
+        def header(self):
+            self.set_font('Arial', 'B', 15)
+            self.cell(0, 10, 'EduMetric Analytics Report', 0, 1, 'C')
+            self.ln(5)
+        
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Arial', 'I', 8)
+            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+else:
+    class EnhancedPDF:
+        def __init__(self):
+            pass
+
+def create_kpi_chart(kpis, title):
+    """Create KPI visualization chart"""
+    if not MATPLOTLIB_AVAILABLE:
+        return io.BytesIO()
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    fig.suptitle(title, fontsize=16, fontweight='bold')
+    
+    # Extract numeric values
+    numeric_kpis = {}
+    for key, value in kpis.items():
+        if isinstance(value, (int, float)):
+            numeric_kpis[key.replace('_', ' ').title()] = value
+    
+    if numeric_kpis:
+        keys = list(numeric_kpis.keys())
+        values = list(numeric_kpis.values())
+        
+        # KPI Bar Chart
+        colors = ['#2196F3', '#4CAF50', '#FF9800', '#F44336', '#9C27B0'][:len(keys)]
+        bars = ax1.bar(keys, values, color=colors, alpha=0.8)
+        ax1.set_title('Key Performance Indicators', fontweight='bold')
+        ax1.set_ylabel('Values', fontweight='bold')
+        ax1.grid(True, alpha=0.3)
+        
+        # Add value labels
+        for bar, value in zip(bars, values):
+            height = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width()/2., height + max(values)*0.01,
+                   f'{value:.1f}', ha='center', va='bottom', fontweight='bold')
+        
+        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha='right')
+        
+        # Donut chart for top KPIs
+        if len(values) >= 3:
+            top_3_keys = keys[:3]
+            top_3_values = values[:3]
+            
+            wedges, texts = ax2.pie(top_3_values, labels=top_3_keys, colors=colors[:3], 
+                                   startangle=90, textprops={'fontweight': 'bold'})
+            
+            centre_circle = plt.Circle((0,0), 0.60, fc='white')
+            ax2.add_artist(centre_circle)
+            ax2.text(0, 0, 'TOP\nKPIs', ha='center', va='center', fontsize=12, fontweight='bold')
+            ax2.set_title('Top Performance Metrics', fontweight='bold')
+    
+    plt.tight_layout()
+    
+    # Save to bytes
+    img_buffer = io.BytesIO()
+    plt.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight', facecolor='white')
+    img_buffer.seek(0)
+    plt.close()
+    return img_buffer
+
+def create_performance_chart(data, chart_type='student'):
+    """Create performance visualization charts"""
+    if not MATPLOTLIB_AVAILABLE:
+        return io.BytesIO()
+    
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(14, 12))
+    fig.suptitle(f'{chart_type.title()} Performance Analytics', fontsize=16, fontweight='bold')
+    
+    if chart_type == 'student' and 'features' in data:
+        features = data['features']
+        predictions = data.get('predictions', {})
+        
+        # Performance Metrics
+        metrics = ['Performance', 'Risk Score', 'Dropout Risk']
+        values = [features.get('performance_overall', 0), 
+                 features.get('risk_score', 0), 
+                 features.get('dropout_score', 0)]
+        colors = ['#4CAF50', '#FF9800', '#F44336']
+        
+        bars1 = ax1.bar(metrics, values, color=colors, alpha=0.8)
+        ax1.set_title('Performance Metrics', fontweight='bold')
+        ax1.set_ylabel('Score (%)', fontweight='bold')
+        ax1.set_ylim(0, 100)
+        ax1.grid(True, alpha=0.3)
+        
+        for bar, value in zip(bars1, values):
+            ax1.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 2,
+                    f'{value:.1f}%', ha='center', va='bottom', fontweight='bold')
+        
+        # Detailed Metrics
+        categories = ['Attendance', 'Behavior', 'Internal Marks']
+        values2 = [features.get('attendance_pct', 0), 
+                  features.get('behavior_pct', 0), 
+                  features.get('internal_pct', 0)]
+        
+        bars2 = ax2.barh(categories, values2, color=['#2196F3', '#9C27B0', '#FF5722'], alpha=0.8)
+        ax2.set_title('Detailed Breakdown', fontweight='bold')
+        ax2.set_xlabel('Score (%)', fontweight='bold')
+        ax2.set_xlim(0, 100)
+        ax2.grid(True, alpha=0.3)
+        
+        # AI Predictions
+        pred_labels = [f"Perf: {predictions.get('performance_label', 'unknown').upper()}",
+                      f"Risk: {predictions.get('risk_label', 'unknown').upper()}",
+                      f"Drop: {predictions.get('dropout_label', 'unknown').upper()}"]
+        
+        ax3.pie([1, 1, 1], labels=pred_labels, colors=colors, 
+               startangle=90, textprops={'fontweight': 'bold'})
+        ax3.set_title('AI Predictions', fontweight='bold')
+        
+        # Semester Trend
+        if 'student' in data:
+            student = data['student']
+            sems, marks = [], []
+            for i in range(1, 9):
+                sem_key = f'SEM{i}'
+                if sem_key in student and student[sem_key] and float(student[sem_key]) > 0:
+                    sems.append(f'S{i}')
+                    marks.append(float(student[sem_key]))
+            
+            if marks:
+                ax4.plot(sems, marks, marker='o', linewidth=3, markersize=8, 
+                        color='#1976D2', markerfacecolor='#FFEB3B')
+                ax4.fill_between(sems, marks, alpha=0.3, color='#1976D2')
+                ax4.set_title('Semester Trend', fontweight='bold')
+                ax4.set_ylabel('Marks (%)', fontweight='bold')
+                ax4.grid(True, alpha=0.3)
+    
+    elif chart_type in ['department', 'year', 'college', 'batch']:
+        if 'label_counts' in data:
+            label_counts = data['label_counts']
+            
+            # Performance Distribution
+            if 'performance' in label_counts:
+                perf_data = label_counts['performance']
+                colors1 = ['#4CAF50', '#FF9800', '#F44336']
+                ax1.pie(perf_data.values(), labels=perf_data.keys(), 
+                       autopct='%1.1f%%', colors=colors1, textprops={'fontweight': 'bold'})
+                ax1.set_title('Performance Distribution', fontweight='bold')
+            
+            # Risk Distribution
+            if 'risk' in label_counts:
+                risk_data = label_counts['risk']
+                ax2.pie(risk_data.values(), labels=risk_data.keys(), 
+                       autopct='%1.1f%%', colors=colors1, textprops={'fontweight': 'bold'})
+                ax2.set_title('Risk Distribution', fontweight='bold')
+            
+            # Dropout Distribution
+            if 'dropout' in label_counts:
+                drop_data = label_counts['dropout']
+                ax3.pie(drop_data.values(), labels=drop_data.keys(), 
+                       autopct='%1.1f%%', colors=colors1, textprops={'fontweight': 'bold'})
+                ax3.set_title('Dropout Distribution', fontweight='bold')
+        
+        # Statistics
+        if 'stats' in data:
+            stats = data['stats']
+            stat_names, stat_values = [], []
+            
+            for key, value in stats.items():
+                if isinstance(value, (int, float)) and key != 'total_students':
+                    stat_names.append(key.replace('_', ' ').title())
+                    stat_values.append(value)
+            
+            if stat_names:
+                bars4 = ax4.bar(stat_names, stat_values, color='#2196F3', alpha=0.8)
+                ax4.set_title('Key Statistics', fontweight='bold')
+                ax4.set_ylabel('Values', fontweight='bold')
+                ax4.grid(True, alpha=0.3)
+                plt.setp(ax4.xaxis.get_majorticklabels(), rotation=45, ha='right')
+    
+    plt.tight_layout()
+    
+    # Save to bytes
+    img_buffer = io.BytesIO()
+    plt.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight', facecolor='white')
+    img_buffer.seek(0)
+    plt.close()
+    return img_buffer
+
+@app.route("/api/export-report", methods=["POST"])
+def api_export_report():
+    """Export comprehensive analytics report with charts as PDF"""
+    if not FPDF_AVAILABLE:
+        return jsonify({"success": False, "message": "PDF export not available - fpdf package missing"}), 500
+    
+    try:
+        data = request.get_json(silent=True) or {}
+        report_type = data.get("report_type", "student")
+        report_data = data.get("report_data", {})
+        
+        # Create enhanced PDF
+        pdf = EnhancedPDF()
+        pdf.add_page()
+        
+        # Title
+        title_map = {
+            "student": "Student Performance Report",
+            "department": "Department Analytics Report", 
+            "year": "Year Analytics Report",
+            "college": "College Analytics Report",
+            "batch": "Batch Analytics Report"
+        }
+        
+        pdf.set_font('Arial', 'B', 18)
+        pdf.cell(0, 15, title_map.get(report_type, "Analytics Report"), 0, 1, 'C')
+        pdf.ln(10)
+        
+        # Report metadata
+        pdf.set_font('Arial', '', 11)
+        pdf.cell(0, 8, f"Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}", 0, 1)
+        pdf.cell(0, 8, "Report Type: Comprehensive Analytics with Visual Charts", 0, 1)
+        pdf.ln(10)
+        
+        # Executive Summary
+        pdf.set_font('Arial', 'B', 14)
+        pdf.set_fill_color(240, 248, 255)
+        pdf.cell(0, 10, "EXECUTIVE SUMMARY", 1, 1, 'C', True)
+        pdf.set_font('Arial', '', 10)
+        
+        if 'summary' in report_data:
+            summary_lines = [report_data['summary'][i:i+85] for i in range(0, len(report_data['summary']), 85)]
+            for line in summary_lines:
+                pdf.cell(0, 6, line, 0, 1)
+        else:
+            pdf.cell(0, 6, f"Comprehensive {report_type} analytics report with performance insights and predictions.", 0, 1)
+        pdf.ln(5)
+        
+        # KPIs Section with Chart
+        if 'kpis' in report_data or 'stats' in report_data:
+            kpis = report_data.get('kpis', report_data.get('stats', {}))
+            
+            pdf.set_font('Arial', 'B', 14)
+            pdf.cell(0, 10, "KEY PERFORMANCE INDICATORS & VISUAL ANALYTICS", 0, 1)
+            pdf.ln(5)
+            
+            # Create and embed KPI chart
+            kpi_chart = create_kpi_chart(kpis, "Performance Metrics Dashboard")
+            
+            # Save chart as temporary file
+            temp_kpi_path = os.path.join(DATA_DIR, "temp_kpi_chart.png")
+            with open(temp_kpi_path, 'wb') as f:
+                f.write(kpi_chart.getvalue())
+            
+            pdf.image(temp_kpi_path, x=10, y=pdf.get_y(), w=190)
+            pdf.ln(85)
+            
+            # KPI Table
+            pdf.set_font('Arial', 'B', 10)
+            pdf.cell(60, 8, "KPI Metric", 1, 0, 'C')
+            pdf.cell(40, 8, "Value", 1, 0, 'C')
+            pdf.cell(90, 8, "Description", 1, 1, 'C')
+            
+            pdf.set_font('Arial', '', 9)
+            kpi_descriptions = {
+                'total_students': 'Total number of students analyzed',
+                'avg_performance': 'Average performance score across all students',
+                'high_performers': 'Number of high-performing students',
+                'high_risk': 'Number of students at high risk',
+                'high_risk_pct': 'Percentage of high-risk students',
+                'top_performers_pct': 'Percentage of top performers'
+            }
+            
+            for key, value in kpis.items():
+                if isinstance(value, (int, float)):
+                    pdf.cell(60, 6, key.replace('_', ' ').title(), 1, 0, 'L')
+                    pdf.cell(40, 6, f"{value:.1f}" + ('%' if 'pct' in key else ''), 1, 0, 'C')
+                    pdf.cell(90, 6, kpi_descriptions.get(key, 'Performance metric'), 1, 1, 'L')
+            
+            # Clean up temp file
+            if os.path.exists(temp_kpi_path):
+                os.remove(temp_kpi_path)
+        
+        # Student Details
+        if 'student' in report_data:
+            student = report_data['student']
+            pdf.ln(5)
+            pdf.set_font('Arial', 'B', 12)
+            pdf.set_fill_color(245, 245, 245)
+            pdf.cell(0, 8, "STUDENT INFORMATION", 1, 1, 'L', True)
+            pdf.set_font('Arial', '', 10)
+            
+            student_info = [
+                f"Name: {student.get('NAME', 'N/A')}",
+                f"Register Number: {student.get('RNO', 'N/A')}",
+                f"Department: {student.get('DEPT', 'N/A')}",
+                f"Year: {student.get('YEAR', 'N/A')}",
+                f"Current Semester: {student.get('CURR_SEM', 'N/A')}"
+            ]
+            
+            for info in student_info:
+                pdf.cell(0, 6, info, 0, 1)
+        
+        # Performance Analytics Charts
+        pdf.add_page()
+        pdf.set_font('Arial', 'B', 16)
+        pdf.cell(0, 10, "PERFORMANCE ANALYTICS & VISUAL INSIGHTS", 0, 1)
+        pdf.ln(5)
+        
+        # Create and embed performance charts
+        perf_chart = create_performance_chart(report_data, report_type)
+        
+        temp_perf_path = os.path.join(DATA_DIR, "temp_perf_chart.png")
+        with open(temp_perf_path, 'wb') as f:
+            f.write(perf_chart.getvalue())
+        
+        pdf.image(temp_perf_path, x=5, y=pdf.get_y(), w=200)
+        pdf.ln(120)
+        
+        # Clean up temp file
+        if os.path.exists(temp_perf_path):
+            os.remove(temp_perf_path)
+        
+        # Detailed Analysis
+        if 'features' in report_data:
+            feats = report_data['features']
+            pdf.set_font('Arial', 'B', 12)
+            pdf.cell(0, 8, "DETAILED PERFORMANCE ANALYSIS", 0, 1)
+            pdf.set_font('Arial', '', 9)
+            
+            analysis_data = [
+                ["Performance Score", f"{feats.get('performance_overall', 0):.1f}%", "Overall academic performance"],
+                ["Risk Assessment", f"{feats.get('risk_score', 0):.1f}%", "Academic difficulty probability"],
+                ["Dropout Risk", f"{feats.get('dropout_score', 0):.1f}%", "Study discontinuation likelihood"],
+                ["Attendance Rate", f"{feats.get('attendance_pct', 0):.1f}%", "Combined attendance performance"],
+                ["Internal Marks", f"{feats.get('internal_pct', 0):.1f}%", "Continuous assessment score"]
+            ]
+            
+            # Analysis table
+            pdf.set_font('Arial', 'B', 9)
+            pdf.cell(45, 6, "Metric", 1, 0, 'C')
+            pdf.cell(25, 6, "Value", 1, 0, 'C')
+            pdf.cell(120, 6, "Description", 1, 1, 'C')
+            
+            pdf.set_font('Arial', '', 8)
+            for row in analysis_data:
+                pdf.cell(45, 5, row[0], 1, 0, 'L')
+                pdf.cell(25, 5, row[1], 1, 0, 'C')
+                pdf.cell(120, 5, row[2], 1, 1, 'L')
+        
+        # AI Predictions
+        if 'predictions' in report_data:
+            preds = report_data['predictions']
+            pdf.ln(5)
+            pdf.set_font('Arial', 'B', 12)
+            pdf.set_fill_color(255, 248, 220)
+            pdf.cell(0, 8, "AI PREDICTIONS & RECOMMENDATIONS", 1, 1, 'C', True)
+            pdf.set_font('Arial', '', 10)
+            
+            pred_info = [
+                f"Performance Level: {preds.get('performance_label', 'N/A').upper()}",
+                f"Risk Level: {preds.get('risk_label', 'N/A').upper()}",
+                f"Dropout Risk: {preds.get('dropout_label', 'N/A').upper()}"
+            ]
+            
+            for info in pred_info:
+                pdf.cell(0, 6, info, 0, 1)
+        
+        # Recommendations
+        pdf.ln(5)
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 8, "ACTIONABLE RECOMMENDATIONS", 0, 1)
+        pdf.set_font('Arial', '', 9)
+        
+        # Generate recommendations based on data
+        recommendations = []
+        if 'features' in report_data:
+            feats = report_data['features']
+            if feats.get('performance_overall', 0) < 60:
+                recommendations.append("• Immediate academic intervention required - performance below threshold")
+            if feats.get('risk_score', 0) > 70:
+                recommendations.append("• High-risk student - schedule counseling sessions")
+            if feats.get('attendance_pct', 0) < 75:
+                recommendations.append("• Attendance improvement needed - implement monitoring system")
+        
+        if not recommendations:
+            recommendations = [
+                "• Continue monitoring student progress regularly",
+                "• Maintain current academic support systems",
+                "• Encourage participation in enhancement programs"
+            ]
+        
+        for rec in recommendations:
+            pdf.cell(0, 5, rec, 0, 1)
+        
+        # Footer
+        pdf.ln(10)
+        pdf.set_font('Arial', 'B', 10)
+        pdf.cell(0, 6, "EDUMETRIC ANALYTICS SYSTEM - COMPREHENSIVE REPORT", 0, 1, 'C')
+        pdf.set_font('Arial', '', 8)
+        pdf.cell(0, 5, "This report contains AI-powered insights with visual analytics and performance predictions.", 0, 1, 'C')
+        
+        # Save PDF
+        pdf_output = io.BytesIO()
+        pdf_content = pdf.output(dest='S').encode('latin-1')
+        pdf_output.write(pdf_content)
+        pdf_output.seek(0)
+        
+        # Generate filename
+        timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{report_type}_visual_report_{timestamp}.pdf"
+        
+        return send_file(
+            pdf_output,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        print(f"[ERR] PDF export: {e}")
+        return jsonify({"success": False, "message": f"PDF export failed: {str(e)}"}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)

@@ -765,7 +765,7 @@ function renderStudentSummary(result) {
    =========================================================== */
 async function triggerAlertEmail() {
     if (!currentStudentResult) return;
-    showAlertModal();
+    await sendAlertEmailDirect();
 }
 
 function showAlertModal() {
@@ -860,119 +860,121 @@ function createAlertModal() {
     return modal;
 }
 
-function closeAlertModal() {
-    const modal = document.querySelector('.alert-modal');
-    if (modal) {
-        modal.classList.remove('show');
-        setTimeout(() => modal.remove(), 300);
-    }
-}
 
-async function sendAlertEmail() {
+
+async function sendAlertEmailDirect() {
     const s = currentStudentResult.student;
     const p = currentStudentResult.predictions;
     const f = currentStudentResult.features;
 
     const email = "ashokkumarboya999@gmail.com";
     
-    let alertType = "Performance Alert";
-    if (p.performance_label === "poor") alertType = "Poor Performance Alert";
-    else if (p.performance_label === "medium") alertType = "Medium Performance Alert";
-    else if (p.risk_label === "high") alertType = "High Risk Alert";
-
-    const subject = `🚨 STUDENT ALERT: ${s.NAME} (${s.RNO}) - Immediate Action Required`;
-    const body = `
-╔══════════════════════════════════════════════════════════════╗
-║                    🎓 STUDENT ANALYTICS SYSTEM               ║
-║                     📧 MENTOR ALERT NOTICE                   ║
-╚══════════════════════════════════════════════════════════════╝
-
-Dear Mentor,
-
-🚨 URGENT ATTENTION REQUIRED 🚨
-
-This is an automated alert regarding a student who needs immediate 
-intervention and support.
-
-┌─────────────────────────────────────────────────────────────┐
-│                    👤 STUDENT INFORMATION                    │
-├─────────────────────────────────────────────────────────────┤
-│ Name:           ${s.NAME.padEnd(40)} │
-│ Register No:    ${s.RNO.padEnd(40)} │
-│ Department:     ${s.DEPT.padEnd(40)} │
-│ Academic Year:  ${s.YEAR} | Semester: ${s.CURR_SEM.toString().padEnd(25)} │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                   📊 PERFORMANCE ANALYSIS                   │
-├─────────────────────────────────────────────────────────────┤
-│ 🎯 Academic Performance: ${p.performance_label.toUpperCase().padEnd(8)} (${f.performance_overall.toFixed(1)}%)${' '.repeat(10)} │
-│ ⚠️  Risk Assessment:     ${p.risk_label.toUpperCase().padEnd(8)} (${f.risk_score.toFixed(1)}%)${' '.repeat(10)} │
-│ 🚨 Dropout Probability:  ${p.dropout_label.toUpperCase().padEnd(8)} (${f.dropout_score.toFixed(1)}%)${' '.repeat(10)} │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                    📈 KEY INDICATORS                        │
-├─────────────────────────────────────────────────────────────┤
-│ 📅 Attendance Rate:     ${f.attendance_pct.toFixed(1)}% ${f.attendance_pct < 75 ? '⚠️ BELOW REQUIRED' : '✅ SATISFACTORY'} │
-│ 📝 Internal Assessment: ${f.internal_pct.toFixed(1)}% ${f.internal_pct < 60 ? '⚠️ NEEDS IMPROVEMENT' : '✅ GOOD'} │
-│ 🎭 Behavior Score:      ${f.behavior_pct.toFixed(1)}%${' '.repeat(25)} │
-└─────────────────────────────────────────────────────────────┘
-
-🎯 IMMEDIATE ACTION PLAN:
-
-${p.risk_label === 'high' || p.dropout_label === 'high' ? '🔴 CRITICAL PRIORITY:' : '🟡 HIGH PRIORITY:'}
-
-✓ Schedule emergency counseling session within 24-48 hours
-✓ Conduct comprehensive academic assessment
-✓ Develop personalized intervention strategy
-✓ Establish weekly progress monitoring
-${f.attendance_pct < 75 ? '✓ Address attendance issues immediately\n' : ''}${f.internal_pct < 60 ? '✓ Provide intensive academic support\n' : ''}✓ Consider family engagement if necessary
-✓ Document all interventions and outcomes
-
-📞 NEXT STEPS:
-
-1. Contact student within 24 hours
-2. Schedule face-to-face meeting
-3. Assess underlying challenges
-4. Implement support measures
-5. Report back on intervention progress
-
-⏰ TIMELINE: This alert requires immediate attention. Please confirm 
-receipt and initial contact within 24 hours.
-
-${p.dropout_label === 'high' ? '🚨 WARNING: High dropout risk detected. This student may discontinue\nstudies without immediate intervention.\n\n' : ''}📧 SYSTEM DETAILS:
-• Alert Generated: ${new Date().toLocaleString()}
-• System: Student Analytics Platform v2.0
-• Confidence Level: ${Math.round(Math.random() * 15 + 85)}% (AI-Powered Analysis)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Thank you for your dedication to student success. Your prompt action
-can make a significant difference in this student's academic journey.
-
-Best regards,
-🎓 Student Analytics System
-📧 Automated Monitoring & Alert Service
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-For technical support: support@studentanalytics.edu
-For urgent student matters: emergency@university.edu
-
-⚠️  This is an automated message. Please do not reply to this email.
-    `;
+    const payload = {
+        email: email,
+        student: s,
+        predictions: p,
+        features: f
+    };
 
     showLoading("Sending mentor alert...");
     try {
-        const res = await api("/api/send-alert", "POST", { email, subject, body });
+        const res = await api("/api/send-alert", "POST", payload);
         hideLoading();
         
-        if (res.success) alert("SUCCESS: Mentor alert sent successfully! A detailed report has been sent to the mentor.");
-        else alert("ERROR: Failed to send alert: " + (res.message || ""));
+        if (res.success) {
+            alert("✅ Mentor alert sent successfully!");
+        } else {
+            alert("❌ Failed to send alert: " + (res.message || "Unknown error"));
+        }
     } catch (error) {
         hideLoading();
-        alert("ERROR: Failed to send alert due to network error.");
+        alert("❌ Failed to send alert due to network error.");
+    }
+}
+
+function getAlertLevel(predictions, features) {
+    const p = predictions;
+    const f = features;
+    
+    if (p.performance_label === 'poor' || p.risk_label === 'high' || p.dropout_label === 'high' || f.attendance_pct < 60) {
+        return {
+            level: 'critical',
+            title: 'CRITICAL ALERT',
+            urgency: 'IMMEDIATE ACTION REQUIRED',
+            icon: '🚨'
+        };
+    } else if (p.performance_label === 'medium' || p.risk_label === 'medium' || f.attendance_pct < 75) {
+        return {
+            level: 'high',
+            title: 'HIGH PRIORITY ALERT',
+            urgency: 'URGENT ATTENTION NEEDED',
+            icon: '⚠️'
+        };
+    } else {
+        return {
+            level: 'medium',
+            title: 'MONITORING ALERT',
+            urgency: 'REGULAR FOLLOW-UP',
+            icon: '📋'
+        };
+    }
+}
+
+function getActionItems(predictions, features, level) {
+    const p = predictions;
+    const f = features;
+    const items = [];
+    
+    if (level === 'critical') {
+        items.push(
+            { icon: '🚨', text: 'Schedule EMERGENCY counseling session within 12 hours' },
+            { icon: '📞', text: 'Contact parents/guardians immediately' },
+            { icon: '👥', text: 'Assign dedicated mentor for daily check-ins' },
+            { icon: '📋', text: 'Develop intensive intervention strategy' }
+        );
+    } else if (level === 'high') {
+        items.push(
+            { icon: '⚠️', text: 'Schedule counseling session within 24 hours' },
+            { icon: '📊', text: 'Conduct comprehensive academic assessment' },
+            { icon: '🎯', text: 'Implement personalized support plan' },
+            { icon: '📈', text: 'Establish weekly progress monitoring' }
+        );
+    } else if (level === 'medium') {
+        items.push(
+            { icon: '📅', text: 'Schedule bi-weekly mentoring sessions' },
+            { icon: '📚', text: 'Provide targeted academic resources' },
+            { icon: '🔍', text: 'Monitor attendance and performance trends' },
+            { icon: '💡', text: 'Offer study skills workshops' }
+        );
+    } else {
+        items.push(
+            { icon: '✅', text: 'Continue regular monitoring schedule' },
+            { icon: '🎉', text: 'Acknowledge positive performance' },
+            { icon: '🚀', text: 'Explore advanced learning opportunities' },
+            { icon: '👨‍🏫', text: 'Consider peer mentoring roles' }
+        );
+    }
+    
+    if (f.attendance_pct < 75) {
+        items.push({ icon: '📅', text: 'Address attendance issues immediately' });
+    }
+    if (f.internal_pct < 60) {
+        items.push({ icon: '📝', text: 'Provide intensive academic support' });
+    }
+    
+    return items;
+}
+
+function getTimelineMessage(level) {
+    switch (level) {
+        case 'critical':
+            return 'IMMEDIATE RESPONSE REQUIRED - Contact student within 12 hours and report back within 24 hours';
+        case 'high':
+            return 'URGENT RESPONSE REQUIRED - Initial contact within 24 hours, intervention plan within 48 hours';
+        case 'medium':
+            return 'TIMELY RESPONSE REQUIRED - Contact within 48 hours, assessment within 1 week';
+        default:
+            return 'ROUTINE FOLLOW-UP - Schedule check-in within 1 week, continue regular monitoring';
     }
 }
 
