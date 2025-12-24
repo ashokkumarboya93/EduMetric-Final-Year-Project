@@ -57,8 +57,11 @@ def insert_student(student_data):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        columns = list(student_data.keys())
-        values = list(student_data.values())
+        # Convert uppercase keys to lowercase for MySQL
+        mysql_data = {k.lower(): v for k, v in student_data.items()}
+        
+        columns = list(mysql_data.keys())
+        values = list(mysql_data.values())
         placeholders = ', '.join(['%s'] * len(values))
         columns_str = ', '.join(columns)
         
@@ -77,10 +80,13 @@ def update_student(rno, student_data):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        set_clause = ', '.join([f"{k} = %s" for k in student_data.keys()])
-        values = list(student_data.values()) + [rno]
+        # Convert uppercase keys to lowercase for MySQL
+        mysql_data = {k.lower(): v for k, v in student_data.items()}
         
-        query = f"UPDATE students SET {set_clause} WHERE RNO = %s"
+        set_clause = ', '.join([f"{k} = %s" for k in mysql_data.keys()])
+        values = list(mysql_data.values()) + [rno]
+        
+        query = f"UPDATE students SET {set_clause} WHERE rno = %s"
         cursor.execute(query, values)
         conn.commit()
         conn.close()
@@ -94,7 +100,7 @@ def delete_student(rno):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM students WHERE RNO = %s", (rno,))
+        cursor.execute("DELETE FROM students WHERE rno = %s", (rno,))
         conn.commit()
         conn.close()
         return True
@@ -148,11 +154,11 @@ def get_stats():
         total_students = cursor.fetchone()[0]
         
         # Departments
-        cursor.execute("SELECT DISTINCT DEPT FROM students WHERE DEPT IS NOT NULL ORDER BY DEPT")
+        cursor.execute("SELECT DISTINCT dept FROM students WHERE dept IS NOT NULL ORDER BY dept")
         departments = [row[0] for row in cursor.fetchall()]
         
         # Years
-        cursor.execute("SELECT DISTINCT YEAR FROM students WHERE YEAR IS NOT NULL ORDER BY YEAR")
+        cursor.execute("SELECT DISTINCT year FROM students WHERE year IS NOT NULL ORDER BY year")
         years = [int(row[0]) for row in cursor.fetchall()]
         
         conn.close()
