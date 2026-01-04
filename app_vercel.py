@@ -251,7 +251,7 @@ def health_check():
     return jsonify({"status": "healthy", "message": "EduMetric API is running"})
 
 # Vercel serverless function handler
-app = app
+handler = app
 
 if __name__ == "__main__":
     app.run(debug=True)
