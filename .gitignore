@@ -20,9 +20,12 @@ venv.bak/
 .DS_Store
 Thumbs.db
 
-# Environment variables
+# Environment variables - CRITICAL SECURITY
 .env
 .env.local
+.env.production
+.env.development
+*.env
 
 # Logs
 *.log
@@ -34,3 +37,12 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Sensitive configuration files
+config_local.py
+secrets.py
+credentials.json
+
+# Backup files
+*.bak
+*.backup

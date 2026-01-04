@@ -4,11 +4,13 @@ import json
 from flask import Flask, jsonify, request, render_template
 import joblib
 
+# Vercel-optimized Flask app
+app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', 'edumetric-vercel-deployment-key-2024')
+
+# Base directory setup
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-
-app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-here')
 
 def to_py(obj):
     """Convert numpy types to Python types for JSON."""
@@ -144,19 +146,21 @@ def predict_student(f):
         "dropout_label": str(drop),
     }
 
-# Sample data for demo
+# Sample data for demo - Enhanced for Vercel
 SAMPLE_STUDENTS = [
     {
-        "RNO": "21A91A0501",
-        "NAME": "John Doe",
-        "EMAIL": "john@example.com",
+        "RNO": "22G31A3167",
+        "NAME": "Ashok Kumar",
+        "EMAIL": "ashok@example.com",
         "DEPT": "CSE",
-        "YEAR": 3,
-        "CURR_SEM": 5,
+        "YEAR": 4,
+        "CURR_SEM": 7,
         "SEM1": 85.5,
         "SEM2": 78.2,
         "SEM3": 82.1,
         "SEM4": 79.8,
+        "SEM5": 88.3,
+        "SEM6": 84.7,
         "INTERNAL_MARKS": 25,
         "TOTAL_DAYS_CURR": 90,
         "ATTENDED_DAYS_CURR": 85,
@@ -177,6 +181,23 @@ SAMPLE_STUDENTS = [
         "ATTENDED_DAYS_CURR": 88,
         "PREV_ATTENDANCE_PERC": 95.2,
         "BEHAVIOR_SCORE_10": 9.2
+    },
+    {
+        "RNO": "20CSE001",
+        "NAME": "Raj Patel",
+        "EMAIL": "raj@example.com",
+        "DEPT": "CSE",
+        "YEAR": 3,
+        "CURR_SEM": 5,
+        "SEM1": 65.2,
+        "SEM2": 58.9,
+        "SEM3": 62.4,
+        "SEM4": 59.1,
+        "INTERNAL_MARKS": 18,
+        "TOTAL_DAYS_CURR": 90,
+        "ATTENDED_DAYS_CURR": 65,
+        "PREV_ATTENDANCE_PERC": 68.5,
+        "BEHAVIOR_SCORE_10": 6.2
     }
 ]
 
@@ -228,6 +249,9 @@ def api_stats():
 @app.route("/health")
 def health_check():
     return jsonify({"status": "healthy", "message": "EduMetric API is running"})
+
+# Vercel serverless function handler
+app = app
 
 if __name__ == "__main__":
     app.run(debug=True)
