@@ -5,7 +5,7 @@ DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
     'database': os.getenv('DB_NAME', 'edumetric_db'),
     'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', ''),
+    'password': os.getenv('DB_PASSWORD', 'A$hok3117'),  # Use actual password
     'port': int(os.getenv('DB_PORT', 3306)),
     'autocommit': True,
     'charset': 'utf8mb4'

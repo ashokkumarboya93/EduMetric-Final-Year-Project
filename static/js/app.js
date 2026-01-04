@@ -47,12 +47,25 @@ async function api(url, method = "GET", body = null) {
         throw new Error("NETWORK_ERROR");
     }
 
+    // Check if response is ok
+    if (!response.ok) {
+        console.error(`HTTP Error: ${response.status} ${response.statusText}`);
+        throw new Error(`HTTP_ERROR_${response.status}`);
+    }
+
     let text = await response.text();
+    
+    // Handle empty response
+    if (!text || text.trim() === '') {
+        console.warn("Empty response received");
+        return { success: false, message: "Empty response from server" };
+    }
 
     try {
-        return text ? JSON.parse(text) : {};
+        return JSON.parse(text);
     } catch (e) {
-        console.error("Invalid JSON Response:", text);
+        console.error("Invalid JSON Response:", text.substring(0, 200));
+        console.error("JSON Parse Error:", e);
         throw new Error("INVALID_JSON");
     }
 }
@@ -319,22 +332,40 @@ async function searchExistingStudent() {
         return;
     }
 
+    console.log("Searching for student with payload:", payload);
     showLoading("Searching student...");
+    
     try {
         const result = await api("/api/student/search", "POST", payload);
+        console.log("Search result:", result);
         hideLoading();
 
         if (!result || !result.success) {
-            alert(result?.message || "Student not found.");
+            const message = result?.message || "Student not found.";
+            console.warn("Student search failed:", message);
+            alert(message);
             return;
         }
 
+        console.log("Student found successfully:", result.student);
         currentStudent = result.student;
         await analyseStudent(currentStudent);
     } catch (err) {
         hideLoading();
         console.error("Error in searchExistingStudent:", err);
-        alert("Error searching student. Please try again.");
+        
+        // Provide more specific error messages
+        let errorMessage = "Error searching student. Please try again.";
+        if (err.message === "NETWORK_ERROR") {
+            errorMessage = "Network connection failed. Please check your internet connection.";
+        } else if (err.message === "INVALID_JSON") {
+            errorMessage = "Server response error. Please try again or contact support.";
+        } else if (err.message.startsWith("HTTP_ERROR_")) {
+            const statusCode = err.message.replace("HTTP_ERROR_", "");
+            errorMessage = `Server error (${statusCode}). Please try again.`;
+        }
+        
+        alert(errorMessage);
     }
 }
 
