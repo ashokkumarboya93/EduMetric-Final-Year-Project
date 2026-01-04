@@ -97,9 +97,9 @@ function setupKeyboardShortcuts() {
         }
         
         // Ctrl/Cmd + number keys for quick navigation
-        if ((e.ctrlKey || e.metaKey) && e.key >= '1' && e.key <= '7') {
+        if ((e.ctrlKey || e.metaKey) && e.key >= '1' && e.key <= '6') {
             e.preventDefault();
-            const modes = ['student', 'department', 'year', 'batch-analytics', 'college', 'batch', 'crud'];
+            const modes = ['student', 'department', 'year', 'college', 'batch', 'crud'];
             const modeIndex = parseInt(e.key) - 1;
             if (modes[modeIndex]) {
                 const navBtn = document.querySelector(`[data-mode="${modes[modeIndex]}"]`);
@@ -246,6 +246,7 @@ async function loadInitialStats() {
 /* ===========================================================
    SIDEBAR NAVIGATION
    =========================================================== */
+// Update navigation to initialize chat mode
 function setupSidebarNav() {
     const buttons = document.querySelectorAll(".nav-btn");
     buttons.forEach(btn => {
@@ -264,6 +265,11 @@ function setupSidebarNav() {
             if (target) {
                 target.classList.remove("hidden");
                 target.classList.add("active");
+                
+                // Initialize chat mode if switching to chat
+                if (mode === 'chat') {
+                    setTimeout(initializeChatMode, 100);
+                }
             }
         });
     });
@@ -1503,201 +1509,7 @@ async function analyseCollege() {
     }
 }
 
-async function analyseBatch() {
-    const batchYear = document.getElementById("batch-year").value;
-    
-    showLoading("Analysing batch...");
-    
-    try {
-        const res = await api("/api/batch-analytics", "POST", { batch_year: batchYear });
-        hideLoading();
-        
-        if (!res || !res.success) {
-            alert(res?.message || "Batch analysis failed. Please try again.");
-            return;
-        }
-        
-        const reportDiv = document.getElementById("batch-analytics-report");
-        if (reportDiv) reportDiv.classList.remove("hidden");
-        
-        renderBatchKPIs(res);
-        renderBatchCharts(res);
-        renderBatchSummary(res);
-        
-    } catch (error) {
-        hideLoading();
-        console.error("Batch analysis error:", error);
-        alert("Batch analysis failed due to network error. Please try again.");
-    }
-}
 
-function renderBatchKPIs(res) {
-    const kpis = res.kpis;
-    const elements = {
-        "batch-kpi-total": `<i class="fa-solid fa-users" style="font-size: 16px; margin-bottom: 4px;"></i><br>Total Students<br><b>${kpis.total_students}</b>`,
-        "batch-kpi-avg-perf": `<i class="fa-solid fa-chart-line" style="font-size: 16px; margin-bottom: 4px;"></i><br>Avg Performance<br><b>${kpis.avg_performance}%</b>`,
-        "batch-kpi-high-risk": `<i class="fa-solid fa-triangle-exclamation" style="font-size: 16px; margin-bottom: 4px;"></i><br>High Risk<br><b>${kpis.high_risk_pct}%</b>`,
-        "batch-kpi-dropout-avg": `<i class="fa-solid fa-user-xmark" style="font-size: 16px; margin-bottom: 4px;"></i><br>Dropout Risk<br><b>${kpis.dropout_avg}%</b>`,
-        "batch-kpi-top-performers": `<i class="fa-solid fa-trophy" style="font-size: 16px; margin-bottom: 4px;"></i><br>Top Performers<br><b>${kpis.top_performers_pct}%</b>`
-    };
-    
-    Object.entries(elements).forEach(([id, html]) => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = html;
-    });
-    
-    const deepAnalytics = res.deep_analytics;
-    const deepElements = {
-        "batch-declining-perf": `<i class="fa-solid fa-arrow-trend-down" style="font-size: 16px; margin-bottom: 4px;"></i><br>Declining Performance<br><b>${deepAnalytics.declining_pct}%</b>`,
-        "batch-attendance-risk": `<i class="fa-solid fa-calendar-xmark" style="font-size: 16px; margin-bottom: 4px;"></i><br>Low Attendance + High Risk<br><b>${deepAnalytics.attendance_risk_correlation}</b>`,
-        "batch-silent-risk": `<i class="fa-solid fa-eye-slash" style="font-size: 16px; margin-bottom: 4px;"></i><br>Silent Risk Students<br><b>${deepAnalytics.silent_risk}</b>`
-    };
-    
-    Object.entries(deepElements).forEach(([id, html]) => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = html;
-    });
-}
-
-function renderBatchCharts(res) {
-    const batchYear = res.batch_year;
-    
-    // Performance Distribution with drill-down
-    if (document.getElementById("batch-chart-performance")) {
-        const perfData = res.distributions.performance;
-        const layout = {
-            ...window.defaultLayout,
-            title: { text: "Performance Distribution", font: { size: 16, color: '#1976d2' } },
-            height: 350
-        };
-        
-        const plot = Plotly.newPlot("batch-chart-performance", [{
-            x: Object.keys(perfData),
-            y: Object.values(perfData),
-            type: "bar",
-            marker: { color: ['#4CAF50', '#FF9800', '#F44336'] },
-            hovertemplate: '<b>%{x}</b><br>Count: %{y}<br>Click to view students<extra></extra>'
-        }], layout, window.defaultChartConfig);
-        
-        document.getElementById("batch-chart-performance").on('plotly_click', function(data) {
-            const clickedValue = data.points[0].x.toLowerCase();
-            showStudentDrilldown('performance_label', clickedValue, 'batch', batchYear);
-        });
-    }
-    
-    // Risk Distribution with drill-down
-    if (document.getElementById("batch-chart-risk")) {
-        const riskData = res.distributions.risk;
-        const layout = {
-            ...window.defaultLayout,
-            title: { text: "Risk Level Breakdown", font: { size: 16, color: '#1976d2' } },
-            height: 350
-        };
-        
-        Plotly.newPlot("batch-chart-risk", [{
-            labels: Object.keys(riskData),
-            values: Object.values(riskData),
-            type: "pie",
-            hole: 0.4,
-            marker: { colors: ['#4CAF50', '#FF9800', '#F44336'] },
-            hovertemplate: '<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}<br>Click to view students<extra></extra>'
-        }], layout, window.defaultChartConfig);
-        
-        document.getElementById("batch-chart-risk").on('plotly_click', function(data) {
-            const clickedValue = data.points[0].label.toLowerCase();
-            showStudentDrilldown('risk_label', clickedValue, 'batch', batchYear);
-        });
-    }
-    
-    // Dropout Distribution with drill-down
-    if (document.getElementById("batch-chart-dropout")) {
-        const dropoutData = res.distributions.dropout;
-        const layout = {
-            ...window.defaultLayout,
-            title: { text: "Dropout Probability Distribution", font: { size: 16, color: '#1976d2' } },
-            height: 350
-        };
-        
-        Plotly.newPlot("batch-chart-dropout", [{
-            x: Object.keys(dropoutData),
-            y: Object.values(dropoutData),
-            type: "bar",
-            marker: { color: ['#4CAF50', '#FF9800', '#F44336'] },
-            hovertemplate: '<b>%{x}</b><br>Count: %{y}<br>Click to view students<extra></extra>'
-        }], layout, window.defaultChartConfig);
-        
-        document.getElementById("batch-chart-dropout").on('plotly_click', function(data) {
-            const clickedValue = data.points[0].x.toLowerCase();
-            showStudentDrilldown('dropout_label', clickedValue, 'batch', batchYear);
-        });
-    }
-    
-    // Semester Trend
-    if (document.getElementById("batch-chart-trend")) {
-        const layout = {
-            ...window.defaultLayout,
-            title: { text: "Semester Performance Trend", font: { size: 16, color: '#1976d2' } },
-            height: 350,
-            xaxis: { title: 'Semesters' },
-            yaxis: { title: 'Average Marks' }
-        };
-        
-        Plotly.newPlot("batch-chart-trend", [{
-            x: res.trends.semesters,
-            y: res.trends.marks,
-            type: "scatter",
-            mode: "lines+markers",
-            line: { width: 4, color: '#1976d2' },
-            marker: { size: 8, color: '#1976d2' },
-            hovertemplate: '<b>%{x}</b><br>Average: %{y:.1f}%<extra></extra>'
-        }], layout, window.defaultChartConfig);
-    }
-}
-
-function renderBatchSummary(res) {
-    const summaryEl = document.getElementById("batch-summary");
-    const suggestionsEl = document.getElementById("batch-suggestions");
-    
-    if (!summaryEl || !suggestionsEl) return;
-    
-    const kpis = res.kpis;
-    const deep = res.deep_analytics;
-    
-    summaryEl.innerHTML = `
-        <p><strong>Batch ${res.batch_year}</strong> has <strong>${kpis.total_students}</strong> students with an average performance of <strong>${kpis.avg_performance}%</strong>.</p>
-        <p><strong>${kpis.high_risk_pct}%</strong> are high-risk students, with an average dropout probability of <strong>${kpis.dropout_avg}%</strong>.</p>
-        <p><strong>${deep.declining_pct}%</strong> show declining performance trends, and <strong>${deep.silent_risk}</strong> students are "silent risk" (medium performance but high dropout risk).</p>
-        <p><strong>${deep.attendance_risk_correlation}</strong> students have both low attendance and high risk indicators.</p>
-    `;
-    
-    suggestionsEl.innerHTML = "";
-    
-    function addSuggestion(text) {
-        const li = document.createElement("li");
-        li.innerHTML = `<i class="fa-solid fa-arrow-right" style="color: #1976d2; margin-right: 8px;"></i>${text}`;
-        suggestionsEl.appendChild(li);
-    }
-    
-    if (kpis.high_risk_pct > 20) {
-        addSuggestion(`<strong>URGENT:</strong> Conduct batch-wide intervention for ${res.batch_year} - ${kpis.high_risk_pct}% high-risk rate is critical.`);
-    }
-    
-    if (deep.declining_pct > 15) {
-        addSuggestion(`Address declining performance trend affecting ${deep.declining_pct}% of batch ${res.batch_year}.`);
-    }
-    
-    if (deep.silent_risk > 5) {
-        addSuggestion(`Monitor ${deep.silent_risk} "silent risk" students who appear stable but have high dropout probability.`);
-    }
-    
-    if (deep.attendance_risk_correlation > 10) {
-        addSuggestion(`Implement attendance improvement program - ${deep.attendance_risk_correlation} students show attendance-risk correlation.`);
-    }
-    
-    addSuggestion(`Assign dedicated mentors to top ${Math.min(10, Math.ceil(kpis.total_students * 0.1))} high-risk students in batch ${res.batch_year}.`);
-    addSuggestion(`Celebrate and leverage ${kpis.top_performers_pct}% top performers as peer mentors.`);
-    addSuggestion(`Schedule monthly batch review meetings to track intervention effectiveness.`);
-}
 
 async function showStudentDrilldown(filterType, filterValue, scope, scopeValue) {
     showLoading("Loading student details...");
@@ -2449,188 +2261,7 @@ function deleteStudentFromRead(rno) {
     fetchStudentForDelete();
 }
 
-/* ===========================================================
-   BATCH-WISE ANALYTICS
-   =========================================================== */
-let currentBatchYear = null;
-let currentBatchData = null;
 
-async function analyseBatch() {
-    const batchSelect = document.getElementById('batch-year-select');
-    if (!batchSelect) {
-        console.error('Batch year select not found');
-        return;
-    }
-    
-    const batchYear = batchSelect.value;
-    if (!batchYear) {
-        alert('Please select a batch year');
-        return;
-    }
-    
-    currentBatchYear = batchYear;
-    showLoading('Analyzing batch...');
-    
-    try {
-        const result = await api('/api/batch/analyze', 'POST', { batch_year: batchYear });
-        hideLoading();
-        
-        if (!result || !result.success) {
-            alert(result?.message || 'Batch analysis failed');
-            return;
-        }
-        
-        currentBatchData = result;
-        const reportDiv = document.getElementById('batch-report');
-        if (reportDiv) {
-            reportDiv.classList.remove('hidden');
-            console.log('Batch report shown');
-        }
-        
-        renderBatchKPIs(result);
-        renderBatchCharts(result);
-        renderBatchSummary(result);
-        
-        // Add drill-down handlers for batch charts
-        setTimeout(() => {
-            addBatchDrilldownHandlers(currentBatchYear);
-        }, 1000);
-        
-    } catch (error) {
-        hideLoading();
-        console.error('Batch analysis error:', error);
-        alert('Batch analysis failed: ' + error.message);
-    }
-}
-
-function renderBatchKPIs(data) {
-    const stats = data.stats;
-    const elements = {
-        'batch-kpi-total': `<i class="fa-solid fa-users"></i> Total Students<br><b>${stats.total_students}</b>`,
-        'batch-kpi-avg-perf': `<i class="fa-solid fa-chart-bar"></i> Avg Performance<br><b>${stats.avg_performance}%</b>`,
-        'batch-kpi-high-risk': `<i class="fa-solid fa-triangle-exclamation"></i> High Risk<br><b>${stats.high_risk_pct}%</b>`,
-        'batch-kpi-avg-dropout': `<i class="fa-solid fa-user-xmark"></i> Avg Dropout Risk<br><b>${stats.avg_dropout}%</b>`,
-        'batch-kpi-top-performers': `<i class="fa-solid fa-trophy"></i> Top Performers<br><b>${stats.top_performers_pct}%</b>`
-    };
-    
-    Object.entries(elements).forEach(([id, html]) => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = html;
-    });
-}
-
-function renderBatchCharts(data) {
-    // Performance Distribution
-    if (document.getElementById('batch-chart-performance')) {
-        const perfData = data.distributions.performance;
-        const layout = {
-            ...window.defaultLayout,
-            title: { text: 'Performance Distribution', font: { size: 18, color: '#1976d2' }, x: 0.5 },
-            xaxis: { title: 'Performance Level' },
-            yaxis: { title: 'Number of Students' }
-        };
-        
-        const trace = {
-            x: Object.keys(perfData),
-            y: Object.values(perfData),
-            type: 'bar',
-            marker: { color: ['#4CAF50', '#FF9800', '#F44336'] },
-            hovertemplate: '<b>%{x}</b><br>Students: %{y}<extra></extra>'
-        };
-        
-        Plotly.newPlot('batch-chart-performance', [trace], layout, window.defaultChartConfig);
-        
-        // Add click event
-        document.getElementById('batch-chart-performance').on('plotly_click', function(eventData) {
-            if (eventData.points.length > 0) {
-                const point = eventData.points[0];
-                performDrilldown('performance_label', point.x, 'batch', currentBatchYear);
-            }
-        });
-    }
-    
-    // Risk Level Breakdown
-    if (document.getElementById('batch-chart-risk')) {
-        const riskData = data.distributions.risk;
-        const layout = {
-            ...window.defaultLayout,
-            title: { text: 'Risk Level Breakdown', font: { size: 18, color: '#1976d2' }, x: 0.5 }
-        };
-        
-        const trace = {
-            labels: Object.keys(riskData),
-            values: Object.values(riskData),
-            type: 'pie',
-            hole: 0.4,
-            marker: { colors: ['#4CAF50', '#FF9800', '#F44336'] },
-            hovertemplate: '<b>%{label}</b><br>Students: %{value}<br>%{percent}<extra></extra>'
-        };
-        
-        Plotly.newPlot('batch-chart-risk', [trace], layout, window.defaultChartConfig);
-        
-        // Add click event
-        document.getElementById('batch-chart-risk').on('plotly_click', function(eventData) {
-            if (eventData.points.length > 0) {
-                const point = eventData.points[0];
-                performDrilldown('risk_label', point.label, 'batch', currentBatchYear);
-            }
-        });
-    }
-    
-    // Dropout Distribution
-    if (document.getElementById('batch-chart-dropout')) {
-        const dropoutData = data.distributions.dropout;
-        const layout = {
-            ...window.defaultLayout,
-            title: { text: 'Dropout Probability Distribution', font: { size: 18, color: '#1976d2' }, x: 0.5 }
-        };
-        
-        const trace = {
-            labels: Object.keys(dropoutData),
-            values: Object.values(dropoutData),
-            type: 'pie',
-            marker: { colors: ['#4CAF50', '#FF9800', '#F44336'] },
-            hovertemplate: '<b>%{label}</b><br>Students: %{value}<br>%{percent}<extra></extra>'
-        };
-        
-        Plotly.newPlot('batch-chart-dropout', [trace], layout, window.defaultChartConfig);
-        
-        // Add click event
-        document.getElementById('batch-chart-dropout').on('plotly_click', function(eventData) {
-            if (eventData.points.length > 0) {
-                const point = eventData.points[0];
-                performDrilldown('dropout_label', point.label, 'batch', currentBatchYear);
-            }
-        });
-    }
-    
-    // Semester Trend Analysis
-    if (document.getElementById('batch-chart-semester-trend')) {
-        const semesterData = data.semester_trend;
-        const semesters = semesterData.map((_, i) => `SEM${i + 1}`);
-        const validData = semesterData.filter(val => val !== null && val > 0);
-        const validSemesters = semesters.filter((_, i) => semesterData[i] !== null && semesterData[i] > 0);
-        
-        const layout = {
-            ...window.defaultLayout,
-            title: { text: 'Semester Trend Analysis', font: { size: 18, color: '#1976d2' }, x: 0.5 },
-            xaxis: { title: 'Semester' },
-            yaxis: { title: 'Average Marks (%)' }
-        };
-        
-        const trace = {
-            x: validSemesters,
-            y: validData,
-            type: 'scatter',
-            mode: 'lines+markers',
-            line: { width: 4, color: '#1976d2' },
-            marker: { size: 10, color: '#1976d2' },
-            hovertemplate: '<b>%{x}</b><br>Average: %{y:.1f}%<extra></extra>'
-        };
-        
-        Plotly.newPlot('batch-chart-semester-trend', [trace], layout, window.defaultChartConfig);
-    }
-}
 
 function renderBatchSummary(data) {
     const summaryEl = document.getElementById('batch-summary');
@@ -2953,11 +2584,6 @@ function addCollegeDrilldownHandlers() {
     addUniversalDrilldownHandlers(charts, 'college', 'all');
 }
 
-function addBatchDrilldownHandlers(batchYear) {
-    const charts = ['batch-chart-performance', 'batch-chart-risk', 'batch-chart-dropout', 'batch-chart-semester-trend'];
-    addUniversalDrilldownHandlers(charts, 'batch', batchYear);
-}
-
 function closeStudentModal() {
     const modal = document.getElementById('student-modal');
     if (modal) modal.classList.add('hidden');
@@ -3256,3 +2882,1017 @@ window.addEventListener('DOMContentLoaded', () => {
     if (landingPage) landingPage.style.display = 'block';
     if (appShell) appShell.style.display = 'none';
 });
+
+/* ===========================================================
+   CHART DRILL-DOWN FUNCTIONALITY
+   =========================================================== */
+
+// Global variable to store current drilldown data for export
+let currentDrilldownData = [];
+
+/**
+ * Add click handlers to department analytics charts
+ */
+function addDepartmentDrilldownHandlers(dept, year) {
+    const chartConfigs = [
+        { id: 'dept-chart-perf-donut', filterType: 'performance_label' },
+        { id: 'dept-chart-risk-donut', filterType: 'risk_label' },
+        { id: 'dept-chart-drop-donut', filterType: 'dropout_label' }
+    ];
+    
+    chartConfigs.forEach(config => {
+        const chart = document.getElementById(config.id);
+        if (chart && chart.on) {
+            // Remove existing handlers
+            chart.removeAllListeners('plotly_click');
+            
+            chart.on('plotly_click', function(data) {
+                const clickedLabel = data.points[0].label.toLowerCase();
+                showDrilldownModal(config.filterType, clickedLabel, 'department', dept, year);
+            });
+        }
+    });
+}
+
+/**
+ * Add click handlers to year analytics charts
+ */
+function addYearDrilldownHandlers(year) {
+    const chartConfigs = [
+        { id: 'year-chart-perf-donut', filterType: 'performance_label' }
+    ];
+    
+    chartConfigs.forEach(config => {
+        const chart = document.getElementById(config.id);
+        if (chart && chart.on) {
+            chart.removeAllListeners('plotly_click');
+            
+            chart.on('plotly_click', function(data) {
+                const clickedLabel = data.points[0].label.toLowerCase();
+                showDrilldownModal(config.filterType, clickedLabel, 'year', year);
+            });
+        }
+    });
+}
+
+/**
+ * Add click handlers to college analytics charts
+ */
+function addCollegeDrilldownHandlers() {
+    const chartConfigs = [
+        { id: 'clg-chart-perf-donut', filterType: 'performance_label' },
+        { id: 'clg-chart-risk-donut', filterType: 'risk_label' }
+    ];
+    
+    chartConfigs.forEach(config => {
+        const chart = document.getElementById(config.id);
+        if (chart && chart.on) {
+            chart.removeAllListeners('plotly_click');
+            
+            chart.on('plotly_click', function(data) {
+                const clickedLabel = data.points[0].label.toLowerCase();
+                showDrilldownModal(config.filterType, clickedLabel, 'college', '');
+            });
+        }
+    });
+}
+
+/**
+ * Fetch filtered students and show in drill-down modal
+ */
+async function showDrilldownModal(filterType, filterValue, scope, scopeValue, yearFilter = null) {
+    showLoading('Loading filtered students...');
+    
+    try {
+        const payload = {
+            filter_type: filterType,
+            filter_value: filterValue,
+            scope: scope,
+            scope_value: scopeValue
+        };
+        
+        // Add year filter if applicable
+        if (yearFilter && yearFilter !== 'all') {
+            payload.year_filter = yearFilter;
+        }
+        
+        const res = await api('/api/analytics/drilldown', 'POST', payload);
+        hideLoading();
+        
+        if (!res.success) {
+            alert(res.message || 'Failed to load filtered students');
+            return;
+        }
+        
+        currentDrilldownData = res.students || [];
+        displayDrilldownModal(res);
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Drilldown error:', error);
+        alert('Failed to load filtered students. Please try again.');
+    }
+}
+
+/**
+ * Display the drill-down modal with filtered students
+ */
+function displayDrilldownModal(res) {
+    const modal = document.getElementById('drilldown-modal');
+    const title = document.getElementById('drilldown-title');
+    const filterBadge = document.getElementById('drilldown-filter-badge');
+    const countBadge = document.getElementById('drilldown-count');
+    const tbody = document.querySelector('#drilldown-table tbody');
+    
+    if (!modal || !tbody) return;
+    
+    // Format filter type for display
+    const filterTypeDisplay = res.filter_info.type
+        .replace('_label', '')
+        .replace('_', ' ')
+        .toUpperCase();
+    
+    const filterValueDisplay = res.filter_info.value.toUpperCase();
+    
+    // Set title based on scope
+    let scopeText = '';
+    if (res.filter_info.scope === 'department') {
+        scopeText = `Department: ${res.filter_info.scope_value}`;
+    } else if (res.filter_info.scope === 'year') {
+        scopeText = `Year ${res.filter_info.scope_value}`;
+    } else if (res.filter_info.scope === 'batch') {
+        scopeText = `Batch ${res.filter_info.scope_value}`;
+    } else {
+        scopeText = 'College-wide';
+    }
+    
+    title.textContent = `${filterValueDisplay} ${filterTypeDisplay} Students`;
+    filterBadge.innerHTML = `<i class="fa-solid fa-filter"></i> ${scopeText} → ${filterValueDisplay} ${filterTypeDisplay}`;
+    countBadge.textContent = `${res.count} students found`;
+    
+    // Populate table
+    tbody.innerHTML = '';
+    
+    if (res.students.length === 0) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td colspan="12" style="text-align: center; padding: 30px; color: #666;">
+            <i class="fa-solid fa-search" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
+            No students found matching this filter
+        </td>`;
+        tbody.appendChild(tr);
+    } else {
+        res.students.forEach(student => {
+            const tr = document.createElement('tr');
+            
+            const perfLabel = `<span class="label-${student.performance_label || 'unknown'}">${(student.performance_label || 'unknown').toUpperCase()}</span>`;
+            const riskLabel = `<span class="label-${student.risk_label || 'unknown'}">${(student.risk_label || 'unknown').toUpperCase()}</span>`;
+            const dropLabel = `<span class="label-${student.dropout_label || 'unknown'}">${(student.dropout_label || 'unknown').toUpperCase()}</span>`;
+            
+            tr.innerHTML = `
+                <td>${student.RNO || ''}</td>
+                <td>${student.NAME || ''}</td>
+                <td>${student.DEPT || ''}</td>
+                <td>${student.YEAR || 0}</td>
+                <td>${student.CURR_SEM || 0}</td>
+                <td>${perfLabel}</td>
+                <td>${riskLabel}</td>
+                <td>${dropLabel}</td>
+                <td>${(student.performance_overall || 0).toFixed(1)}%</td>
+                <td>${(student.risk_score || 0).toFixed(1)}%</td>
+                <td>${(student.dropout_score || 0).toFixed(1)}%</td>
+                <td>
+                    <button class="view-btn" onclick="viewStudentFromDrilldown('${student.RNO}')">
+                        <i class="fa-solid fa-eye"></i> View
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+    
+    // Show modal
+    modal.classList.add('show');
+    modal.classList.remove('hidden');
+}
+
+/**
+ * Close drill-down modal
+ */
+function closeDrilldownModal() {
+    const modal = document.getElementById('drilldown-modal');
+    if (modal) {
+        modal.classList.remove('show');
+        modal.classList.add('hidden');
+    }
+}
+
+/**
+ * View student details from drill-down modal
+ */
+async function viewStudentFromDrilldown(rno) {
+    closeDrilldownModal();
+    
+    try {
+        showLoading('Loading student details...');
+        const result = await api('/api/student/search', 'POST', { rno });
+        hideLoading();
+        
+        if (result.success) {
+            currentStudent = result.student;
+            await analyseStudent(currentStudent);
+            
+            // Switch to student mode
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.mini-nav-btn').forEach(b => b.classList.remove('active'));
+            
+            const studentBtn = document.querySelector('[data-mode="student"]');
+            if (studentBtn) studentBtn.classList.add('active');
+            
+            document.querySelectorAll('.mode-section').forEach(sec => {
+                sec.classList.remove('active');
+                sec.classList.add('hidden');
+            });
+            
+            const studentMode = document.getElementById('mode-student');
+            if (studentMode) {
+                studentMode.classList.remove('hidden');
+                studentMode.classList.add('active');
+            }
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+            alert('Failed to load student details: ' + result.message);
+        }
+    } catch (error) {
+        hideLoading();
+        console.error('Error loading student from drilldown:', error);
+        alert('Failed to load student details.');
+    }
+}
+
+/**
+ * Export drill-down data to CSV
+ */
+function exportDrilldownCSV() {
+    if (!currentDrilldownData || currentDrilldownData.length === 0) {
+        alert('No data to export');
+        return;
+    }
+    
+    // Create CSV content
+    const headers = ['RNO', 'Name', 'Dept', 'Year', 'Semester', 'Performance', 'Risk', 'Dropout', 'Performance%', 'Risk%', 'Dropout%'];
+    const rows = currentDrilldownData.map(s => [
+        s.RNO,
+        s.NAME,
+        s.DEPT,
+        s.YEAR,
+        s.CURR_SEM,
+        s.performance_label,
+        s.risk_label,
+        s.dropout_label,
+        s.performance_overall,
+        s.risk_score,
+        s.dropout_score
+    ]);
+    
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    downloadCSV(csv, 'filtered_students.csv');
+}
+
+/* ===========================================================
+   CHAT ASSISTANT FUNCTIONALITY
+   =========================================================== */
+let chatHistory = [];
+let isProcessingChat = false;
+
+// Send chat message
+async function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('chat-send-btn');
+    
+    if (!input || !sendBtn) return;
+    
+    const message = input.value.trim();
+    if (!message || isProcessingChat) return;
+    
+    // Add user message to chat
+    addChatMessage(message, 'user');
+    input.value = '';
+    
+    // Show typing indicator
+    showTypingIndicator();
+    
+    isProcessingChat = true;
+    sendBtn.disabled = true;
+    
+    try {
+        console.log('Sending chat message:', message);
+        const response = await api('/api/chat', 'POST', { message });
+        console.log('Chat response:', response);
+        
+        hideTypingIndicator();
+        
+        if (response && response.success) {
+            // Add bot response
+            addChatMessage(response.response, 'bot');
+            
+            // Update analytics canvas if data is provided
+            if (response.type === 'analytics' && response.data) {
+                updateAnalyticsCanvas(response.data);
+            }
+        } else {
+            const errorMsg = response?.message || response?.response || 'Sorry, I encountered an error processing your request.';
+            addChatMessage(errorMsg, 'bot');
+        }
+    } catch (error) {
+        hideTypingIndicator();
+        console.error('Chat error:', error);
+        
+        let errorMessage = 'Sorry, I\'m having trouble connecting. Please try again.';
+        if (error.message === 'NETWORK_ERROR') {
+            errorMessage = 'Network connection failed. Please check your internet connection and try again.';
+        } else if (error.message === 'INVALID_JSON') {
+            errorMessage = 'Server response error. Please try again or contact support.';
+        }
+        
+        addChatMessage(errorMessage, 'bot');
+    } finally {
+        isProcessingChat = false;
+        sendBtn.disabled = false;
+        input.focus();
+    }
+}
+
+// Add message to chat interface
+function addChatMessage(message, sender) {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chat-message ${sender}-message`;
+    
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.innerHTML = sender === 'user' ? '<i class="fa-solid fa-user"></i>' : '<i class="fa-solid fa-robot"></i>';
+    
+    const content = document.createElement('div');
+    content.className = 'message-content';
+    content.innerHTML = message;
+    
+    messageDiv.appendChild(avatar);
+    messageDiv.appendChild(content);
+    
+    messagesContainer.appendChild(messageDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    
+    // Store in history
+    chatHistory.push({ message, sender, timestamp: new Date() });
+}
+
+// Show typing indicator
+function showTypingIndicator() {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
+    
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'chat-message bot-message';
+    typingDiv.id = 'typing-indicator';
+    
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
+    
+    const content = document.createElement('div');
+    content.className = 'message-content';
+    content.innerHTML = `
+        <div class="typing-indicator">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+        </div>
+        <span style="font-size: 12px; color: #666;">Analyzing your query...</span>
+    `;
+    
+    typingDiv.appendChild(avatar);
+    typingDiv.appendChild(content);
+    
+    messagesContainer.appendChild(typingDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Hide typing indicator
+function hideTypingIndicator() {
+    const typingIndicator = document.getElementById('typing-indicator');
+    if (typingIndicator) {
+        typingIndicator.remove();
+    }
+}
+
+// Update analytics canvas with results
+function updateAnalyticsCanvas(data) {
+    const canvasWelcome = document.querySelector('.canvas-welcome');
+    const canvasResults = document.getElementById('canvas-results');
+    const canvasTitle = document.getElementById('canvas-title');
+    
+    if (!canvasResults || !canvasTitle) return;
+    
+    // Hide welcome, show results
+    if (canvasWelcome) canvasWelcome.style.display = 'none';
+    canvasResults.classList.remove('hidden');
+    
+    // Set title
+    canvasTitle.textContent = data.title || 'Analytics Results';
+    
+    // Check if this is individual student analytics
+    if (data.action === 'student_analytics' && data.student_info) {
+        updateStudentAnalyticsCanvas(data);
+    } else {
+        // Update KPIs for group analytics
+        updateCanvasKPIs(data.stats);
+        
+        // Update charts
+        updateCanvasCharts(data);
+        
+        // Update table
+        updateCanvasTable(data.students || data.table);
+        
+        // Update insights
+        updateCanvasInsights(data.insight);
+    }
+}
+
+
+
+// Update student analytics canvas with comprehensive data
+function updateStudentAnalyticsCanvas(data) {
+    const kpisContainer = document.getElementById('canvas-kpis');
+    const chartsContainer = document.getElementById('canvas-charts');
+    const tableContainer = document.getElementById('canvas-table');
+    const insightsContainer = document.getElementById('canvas-insights');
+    
+    // Update student info and KPIs
+    if (kpisContainer) {
+        kpisContainer.innerHTML = '';
+        
+        // Student basic info
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'student-info-grid';
+        infoDiv.innerHTML = `
+            <div class="info-item">
+                <label>Student Name</label>
+                <span>${data.student_info.name}</span>
+            </div>
+            <div class="info-item">
+                <label>Roll Number</label>
+                <span>${data.student_info.rno}</span>
+            </div>
+            <div class="info-item">
+                <label>Department</label>
+                <span>${data.student_info.dept}</span>
+            </div>
+            <div class="info-item">
+                <label>Year & Semester</label>
+                <span>Year ${data.student_info.year}, Sem ${data.student_info.semester}</span>
+            </div>
+            <div class="info-item">
+                <label>Email</label>
+                <span>${data.student_info.email || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+                <label>Mentor</label>
+                <span>${data.student_info.mentor || 'N/A'}</span>
+            </div>
+        `;
+        kpisContainer.appendChild(infoDiv);
+        
+        // Performance KPIs
+        const kpiGrid = document.createElement('div');
+        kpiGrid.className = 'canvas-kpis';
+        kpiGrid.style.marginTop = '20px';
+        
+        const kpiData = [
+            { 
+                label: 'Performance Score', 
+                value: `${data.kpis.performance_score.toFixed(1)}%`, 
+                status: data.predictions.performance_label,
+                icon: 'fa-chart-line',
+                class: `kpi-${data.predictions.performance_label}`
+            },
+            { 
+                label: 'Risk Level', 
+                value: `${data.kpis.risk_score.toFixed(1)}%`, 
+                status: data.predictions.risk_label,
+                icon: 'fa-triangle-exclamation',
+                class: `kpi-${data.predictions.risk_label === 'high' ? 'poor' : data.predictions.risk_label}`
+            },
+            { 
+                label: 'Dropout Risk', 
+                value: `${data.kpis.dropout_score.toFixed(1)}%`, 
+                status: data.predictions.dropout_label,
+                icon: 'fa-user-xmark',
+                class: `kpi-${data.predictions.dropout_label === 'high' ? 'poor' : data.predictions.dropout_label}`
+            },
+            { 
+                label: 'Attendance Rate', 
+                value: `${data.kpis.attendance_rate.toFixed(1)}%`, 
+                status: data.kpis.attendance_rate >= 85 ? 'high' : data.kpis.attendance_rate >= 75 ? 'medium' : 'low',
+                icon: 'fa-calendar-check',
+                class: data.kpis.attendance_rate >= 85 ? 'kpi-high' : data.kpis.attendance_rate >= 75 ? 'kpi-medium' : 'kpi-poor'
+            },
+            { 
+                label: 'Internal Marks', 
+                value: `${data.kpis.internal_marks.toFixed(1)}%`, 
+                status: data.kpis.internal_marks >= 80 ? 'excellent' : data.kpis.internal_marks >= 60 ? 'good' : 'needs improvement',
+                icon: 'fa-clipboard-check',
+                class: data.kpis.internal_marks >= 80 ? 'kpi-high' : data.kpis.internal_marks >= 60 ? 'kpi-medium' : 'kpi-poor'
+            },
+            { 
+                label: 'Behavior Score', 
+                value: `${data.kpis.behavior_score.toFixed(1)}%`, 
+                status: data.kpis.behavior_score >= 80 ? 'excellent' : data.kpis.behavior_score >= 60 ? 'good' : 'needs attention',
+                icon: 'fa-user-check',
+                class: data.kpis.behavior_score >= 80 ? 'kpi-high' : data.kpis.behavior_score >= 60 ? 'kpi-medium' : 'kpi-poor'
+            }
+        ];
+        
+        kpiData.forEach(kpi => {
+            const kpiDiv = document.createElement('div');
+            kpiDiv.className = `canvas-kpi ${kpi.class}`;
+            kpiDiv.innerHTML = `
+                <h4><i class="fa-solid ${kpi.icon}"></i> ${kpi.label}</h4>
+                <div class="value">${kpi.value}</div>
+                <div class="status">${kpi.status.toUpperCase()}</div>
+            `;
+            kpiGrid.appendChild(kpiDiv);
+        });
+        
+        kpisContainer.appendChild(kpiGrid);
+    }
+    
+    // Update charts for student
+    if (chartsContainer) {
+        chartsContainer.innerHTML = '';
+        
+        // Performance gauge chart
+        const gaugeDiv = document.createElement('div');
+        gaugeDiv.className = 'canvas-chart';
+        gaugeDiv.id = 'canvas-student-gauge';
+        chartsContainer.appendChild(gaugeDiv);
+        
+        createStudentGaugeChart(data.kpis);
+        
+        // Semester performance chart
+        const semesterDiv = document.createElement('div');
+        semesterDiv.className = 'canvas-chart';
+        semesterDiv.id = 'canvas-student-semesters';
+        chartsContainer.appendChild(semesterDiv);
+        
+        createSemesterTrendChart(data.semester_data);
+    }
+    
+    // Update recommendations
+    if (insightsContainer) {
+        insightsContainer.innerHTML = `
+            <h4><i class="fa-solid fa-lightbulb"></i> AI Insights & Recommendations</h4>
+            <p class="insight-text">${data.insight}</p>
+            <ul class="recommendations-list">
+                ${data.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+            </ul>
+        `;
+    }
+    
+    // Clear table for individual student
+    if (tableContainer) {
+        tableContainer.innerHTML = '';
+    }
+}
+
+// Create student performance gauge chart
+function createStudentGaugeChart(kpis) {
+    const layout = {
+        title: {
+            text: 'Student Performance Dashboard',
+            font: { size: 18, color: '#1976d2' }
+        },
+        grid: { rows: 2, columns: 3, pattern: 'independent' },
+        margin: { l: 40, r: 40, t: 80, b: 40 }
+    };
+    
+    const traces = [
+        {
+            type: "indicator",
+            mode: "gauge+number+delta",
+            value: kpis.performance_score,
+            title: { text: "Performance" },
+            delta: { reference: 70 },
+            gauge: {
+                axis: { range: [0, 100] },
+                bar: { color: "#1976d2" },
+                steps: [
+                    { range: [0, 50], color: "#ffcdd2" },
+                    { range: [50, 75], color: "#fff9c4" },
+                    { range: [75, 100], color: "#c8e6c9" }
+                ],
+                threshold: { line: { color: "red", width: 4 }, thickness: 0.75, value: 70 }
+            },
+            domain: { row: 0, column: 0 }
+        },
+        {
+            type: "indicator",
+            mode: "gauge+number",
+            value: kpis.attendance_rate,
+            title: { text: "Attendance" },
+            gauge: {
+                axis: { range: [0, 100] },
+                bar: { color: "#00897b" },
+                steps: [
+                    { range: [0, 75], color: "#ffcdd2" },
+                    { range: [75, 100], color: "#c8e6c9" }
+                ],
+                threshold: { line: { color: "orange", width: 4 }, thickness: 0.75, value: 75 }
+            },
+            domain: { row: 0, column: 1 }
+        },
+        {
+            type: "indicator",
+            mode: "gauge+number",
+            value: kpis.behavior_score,
+            title: { text: "Behavior" },
+            gauge: {
+                axis: { range: [0, 100] },
+                bar: { color: "#9c27b0" },
+                steps: [
+                    { range: [0, 60], color: "#ffcdd2" },
+                    { range: [60, 80], color: "#fff9c4" },
+                    { range: [80, 100], color: "#c8e6c9" }
+                ]
+            },
+            domain: { row: 0, column: 2 }
+        }
+    ];
+    
+    Plotly.newPlot('canvas-student-gauge', traces, layout, { displayModeBar: false, responsive: true });
+}
+
+// Create semester trend chart
+function createSemesterTrendChart(semesterData) {
+    const semesters = [];
+    const marks = [];
+    
+    for (let i = 1; i <= 8; i++) {
+        const mark = semesterData[`SEM${i}`];
+        if (mark && mark > 0) {
+            semesters.push(`Semester ${i}`);
+            marks.push(mark);
+        }
+    }
+    
+    if (marks.length === 0) {
+        document.getElementById('canvas-student-semesters').innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
+                <p>No semester data available</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const layout = {
+        title: {
+            text: 'Semester Performance Trend',
+            font: { size: 18, color: '#1976d2' }
+        },
+        xaxis: { title: 'Semesters' },
+        yaxis: { title: 'Marks (%)', range: [0, 100] },
+        margin: { l: 60, r: 60, t: 80, b: 60 }
+    };
+    
+    const trace = {
+        x: semesters,
+        y: marks,
+        type: 'scatter',
+        mode: 'lines+markers',
+        line: { width: 4, color: '#1976d2' },
+        marker: { size: 10, color: '#1976d2', line: { color: '#fff', width: 2 } },
+        fill: 'tonexty',
+        fillcolor: 'rgba(25, 118, 210, 0.1)',
+        hovertemplate: '<b>%{x}</b><br>Marks: %{y}%<extra></extra>'
+    };
+    
+    Plotly.newPlot('canvas-student-semesters', [trace], layout, { displayModeBar: false, responsive: true });
+}
+
+// Update charts in canvas
+function updateCanvasCharts(data) {
+    const chartsContainer = document.getElementById('canvas-charts');
+    if (!chartsContainer) return;
+    
+    chartsContainer.innerHTML = '';
+    
+    // Create chart based on action type
+    if (data.action === 'department_analysis' && data.department_stats) {
+        createDepartmentComparisonChart(data.department_stats);
+    } else if (data.action === 'attendance_analysis' && data.attendance_data) {
+        createAttendanceScatterChart(data.attendance_data);
+    } else if (data.students && data.students.length > 0) {
+        createStudentPerformanceChart(data.students);
+    }
+}
+
+// Create department comparison chart
+function createDepartmentComparisonChart(deptStats) {
+    const chartsContainer = document.getElementById('canvas-charts');
+    const chartDiv = document.createElement('div');
+    chartDiv.className = 'canvas-chart';
+    chartDiv.id = 'canvas-dept-chart';
+    chartsContainer.appendChild(chartDiv);
+    
+    const departments = Object.keys(deptStats);
+    const avgPerformances = departments.map(dept => deptStats[dept].avg_performance || 0);
+    
+    const layout = {
+        title: {
+            text: 'Department Performance Comparison',
+            font: { size: 18, color: '#1976d2' }
+        },
+        xaxis: { title: 'Department' },
+        yaxis: { title: 'Average Performance (%)' },
+        margin: { l: 60, r: 60, t: 80, b: 60 }
+    };
+    
+    Plotly.newPlot('canvas-dept-chart', [{
+        x: departments,
+        y: avgPerformances,
+        type: 'bar',
+        marker: { color: '#1976d2' },
+        hovertemplate: '<b>%{x}</b><br>Avg Performance: %{y:.1f}%<extra></extra>'
+    }], layout, { displayModeBar: false, responsive: true });
+}
+
+// Create attendance scatter chart
+function createAttendanceScatterChart(attendanceData) {
+    const chartsContainer = document.getElementById('canvas-charts');
+    const chartDiv = document.createElement('div');
+    chartDiv.className = 'canvas-chart';
+    chartDiv.id = 'canvas-attendance-chart';
+    chartsContainer.appendChild(chartDiv);
+    
+    const attendanceValues = attendanceData.map(d => d[0]);
+    const performanceValues = attendanceData.map(d => d[1]);
+    
+    const layout = {
+        title: {
+            text: 'Attendance vs Performance Correlation',
+            font: { size: 18, color: '#1976d2' }
+        },
+        xaxis: { title: 'Attendance (%)' },
+        yaxis: { title: 'Performance (%)' },
+        margin: { l: 60, r: 60, t: 80, b: 60 }
+    };
+    
+    Plotly.newPlot('canvas-attendance-chart', [{
+        x: attendanceValues,
+        y: performanceValues,
+        mode: 'markers',
+        type: 'scatter',
+        marker: { 
+            color: '#00897b',
+            size: 8,
+            opacity: 0.7
+        },
+        hovertemplate: '<b>Student</b><br>Attendance: %{x:.1f}%<br>Performance: %{y:.1f}%<extra></extra>'
+    }], layout, { displayModeBar: false, responsive: true });
+}
+
+// Create student performance chart
+function createStudentPerformanceChart(students) {
+    const chartsContainer = document.getElementById('canvas-charts');
+    const chartDiv = document.createElement('div');
+    chartDiv.className = 'canvas-chart';
+    chartDiv.id = 'canvas-performance-chart';
+    chartsContainer.appendChild(chartDiv);
+    
+    const studentNames = students.slice(0, 10).map(s => s.name || s.NAME || 'Unknown');
+    const performances = students.slice(0, 10).map(s => s.performance_overall || 0);
+    
+    const layout = {
+        title: {
+            text: 'Student Performance Overview',
+            font: { size: 18, color: '#1976d2' }
+        },
+        xaxis: { title: 'Students' },
+        yaxis: { title: 'Performance (%)' },
+        margin: { l: 60, r: 60, t: 80, b: 100 }
+    };
+    
+    Plotly.newPlot('canvas-performance-chart', [{
+        x: studentNames,
+        y: performances,
+        type: 'bar',
+        marker: { 
+            color: performances,
+            colorscale: 'RdYlGn',
+            showscale: true
+        },
+        hovertemplate: '<b>%{x}</b><br>Performance: %{y:.1f}%<extra></extra>'
+    }], layout, { displayModeBar: false, responsive: true });
+}
+
+// Update table in canvas
+function updateCanvasTable(students) {
+    const tableContainer = document.getElementById('canvas-table');
+    if (!tableContainer || !students || students.length === 0) {
+        if (tableContainer) tableContainer.innerHTML = '';
+        return;
+    }
+    
+    tableContainer.innerHTML = `
+        <h4><i class="fa-solid fa-table"></i> Student Details (${students.length} student${students.length > 1 ? 's' : ''})</h4>
+        <div class="canvas-table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>RNO</th>
+                        <th>Name</th>
+                        <th>Dept</th>
+                        <th>Year</th>
+                        <th>Performance</th>
+                        <th>Risk</th>
+                        <th>Dropout</th>
+                        <th>Score</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="canvas-table-body">
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    const tbody = document.getElementById('canvas-table-body');
+    if (!tbody) return;
+    
+    students.slice(0, 20).forEach(student => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${student.RNO || ''}</td>
+            <td>${student.NAME || ''}</td>
+            <td>${student.DEPT || ''}</td>
+            <td>${student.YEAR || ''}</td>
+            <td><span class="label-${student.performance_label || 'unknown'}">${(student.performance_label || 'unknown').toUpperCase()}</span></td>
+            <td><span class="label-${student.risk_label || 'unknown'}">${(student.risk_label || 'unknown').toUpperCase()}</span></td>
+            <td><span class="label-${student.dropout_label || 'unknown'}">${(student.dropout_label || 'unknown').toUpperCase()}</span></td>
+            <td>${(student.performance_overall || 0).toFixed(1)}%</td>
+            <td>
+                <button class="view-btn" onclick="viewStudentFromCanvas('${student.RNO}')" style="padding: 4px 8px; font-size: 11px;">
+                    <i class="fa-solid fa-eye"></i> View
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// Update insights in canvas
+function updateCanvasInsights(insight) {
+    const insightsContainer = document.getElementById('canvas-insights');
+    if (!insightsContainer) return;
+    
+    if (!insight) {
+        insightsContainer.innerHTML = '';
+        return;
+    }
+    
+    insightsContainer.innerHTML = `
+        <h4><i class="fa-solid fa-lightbulb"></i> AI Insights</h4>
+        <p>${insight}</p>
+    `;
+}
+
+// View student from canvas table
+async function viewStudentFromCanvas(rno) {
+    try {
+        showLoading('Loading student analytics...');
+        const result = await api('/api/student/search', 'POST', { rno });
+        hideLoading();
+        
+        if (result.success) {
+            currentStudent = result.student;
+            await analyseStudent(currentStudent);
+            
+            // Switch to student mode
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            const studentBtn = document.querySelector('[data-mode="student"]');
+            if (studentBtn) studentBtn.classList.add('active');
+            
+            document.querySelectorAll('.mode-section').forEach(sec => {
+                sec.classList.remove('active');
+                sec.classList.add('hidden');
+            });
+            
+            const studentMode = document.getElementById('mode-student');
+            if (studentMode) {
+                studentMode.classList.remove('hidden');
+                studentMode.classList.add('active');
+            }
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+            alert('Failed to load student details: ' + result.message);
+        }
+    } catch (error) {
+        hideLoading();
+        console.error('Error loading student:', error);
+        alert('Failed to load student analytics.');
+    }
+}
+
+// Clear analytics canvas
+function clearCanvas() {
+    const canvasWelcome = document.querySelector('.canvas-welcome');
+    const canvasResults = document.getElementById('canvas-results');
+    
+    if (canvasWelcome) canvasWelcome.style.display = 'flex';
+    if (canvasResults) canvasResults.classList.add('hidden');
+    
+    // Clear chat history if needed
+    // chatHistory = [];
+}
+
+// Handle Enter key in chat input
+document.addEventListener('DOMContentLoaded', function() {
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendChatMessage();
+            }
+        });
+    }
+    
+    // Initialize chat mode when page loads
+    setTimeout(() => {
+        const chatMode = document.getElementById('mode-chat');
+        if (chatMode && chatMode.classList.contains('active')) {
+            initializeChatMode();
+        }
+    }, 1000);
+});
+
+// Add sample questions for easy interaction
+function addSampleQuestions() {
+    const sampleQuestions = [
+        "performance analytics of CSE(AI)",
+        "CSE department analytics", 
+        "Show top performers",
+        "High risk students",
+        "CSE2021001",
+        "21CSE001 analytics"
+    ];
+    
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
+    
+    const samplesDiv = document.createElement('div');
+    samplesDiv.className = 'chat-message bot-message';
+    samplesDiv.innerHTML = `
+        <div class="message-avatar"><i class="fa-solid fa-robot"></i></div>
+        <div class="message-content">
+            <p><strong>Try these sample questions:</strong></p>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+                ${sampleQuestions.map(q => `
+                    <button class="sample-question" onclick="askSampleQuestion('${q}')">
+                        ${q}
+                    </button>
+                `).join('')}
+            </div>
+            <p style="margin-top: 15px; font-size: 14px; color: #666;">
+                <i class="fa-solid fa-info-circle"></i> 
+                <strong>Tip:</strong> You can also just type a roll number (like "CSE2021001" or "21CSE001") to get instant student analytics!
+            </p>
+        </div>
+    `;
+    
+    messagesContainer.appendChild(samplesDiv);
+}
+
+// Ask sample question
+function askSampleQuestion(question) {
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+        chatInput.value = question;
+        sendChatMessage();
+    }
+}
+
+// Initialize chat interface when switching to chat mode
+function initializeChatMode() {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (messagesContainer && messagesContainer.children.length <= 1) {
+        // Add sample questions if chat is empty
+        setTimeout(() => {
+            addSampleQuestions();
+        }, 500);
+    }
+}
+

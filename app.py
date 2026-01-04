@@ -1,11 +1,11 @@
 import os
 import numpy as np
 import pandas as pd
-
 from flask import Flask, jsonify, request, render_template, send_file
 import joblib
 import io
-import base64
+import smtplib
+from email.mime.text import MIMEText
 from db import (
     load_students_df, get_student_by_rno, insert_student, 
     update_student, delete_student, batch_insert_students, get_stats
@@ -13,94 +13,46 @@ from db import (
 from config import SECRET_KEY, DEBUG, EMAIL_USER, EMAIL_PASSWORD
 
 try:
-    from fpdf import FPDF
+    from fpdf2 import FPDF
     FPDF_AVAILABLE = True
 except ImportError:
-    try:
-        from fpdf2 import FPDF
-        FPDF_AVAILABLE = True
-    except ImportError:
-        FPDF_AVAILABLE = False
-        print("[WARN] fpdf not available - PDF export disabled")
+    FPDF_AVAILABLE = False
+    print("[WARN] fpdf not available - PDF export disabled")
 
 try:
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    from matplotlib.patches import Circle
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
-    matplotlib = None
-    plt = None
     MATPLOTLIB_AVAILABLE = False
     print("[WARN] matplotlib not available - PDF charts disabled")
 
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-
-# ===========================================================
-# PATH SETUP
-# ===========================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, r"data")
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 app.config['DEBUG'] = DEBUG
 
-# ===========================================================
-# UNIVERSAL FIX: NUMPY/PANDAS → PYTHON TYPES
-# ===========================================================
 def to_py(obj):
-    """Convert numpy/pandas types → pure Python types for JSON."""
-    # numpy / pandas integers
-    if isinstance(obj, (np.integer, np.int64, np.int32, np.int16)):  # type: ignore
+    """Convert numpy/pandas types to Python types for JSON."""
+    if isinstance(obj, (np.integer, np.int64, np.int32, np.int16)):
         return int(obj)
-
-    # numpy / pandas floats  → handle NaN / inf safely
-    if isinstance(obj, (np.floating, np.float64, np.float32, np.float16)):  # type: ignore
+    if isinstance(obj, (np.floating, np.float64, np.float32, np.float16)):
         val = float(obj)
-        if np.isnan(val) or np.isinf(val):
-            return None
-        return val
-
-    # plain Python float (just in case)
-    if isinstance(obj, float):
-        if np.isnan(obj) or np.isinf(obj):
-            return None
-        return obj
-
-    # pandas Series → dict
+        return None if np.isnan(val) or np.isinf(val) else val
+    if isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)):
+        return None
     if isinstance(obj, pd.Series):
         return {k: to_py(v) for k, v in obj.to_dict().items()}
-
-    # pandas DataFrame → list of dicts
     if isinstance(obj, pd.DataFrame):
         return [to_py(r) for _, r in obj.iterrows()]
-
-    # dict / list recursion
     if isinstance(obj, dict):
         return {k: to_py(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [to_py(v) for v in obj]
-
     return obj
-
-# ===========================================================
-# SAFE CSV & MODEL LOADING
-# ===========================================================
-def safe_read_csv(path):
-    if not os.path.exists(path):
-        print(f"[WARN] CSV not found: {path}")
-        return pd.DataFrame()
-    try:
-        return pd.read_csv(path)
-    except Exception as e:
-        print(f"[WARN] Could not read {path}: {e}")
-        return pd.DataFrame()
-
-# MySQL is now the SINGLE SOURCE OF TRUTH - No more CSV loading
 
 def safe_load(name):
     path = os.path.join(DATA_DIR, name)
@@ -120,9 +72,7 @@ risk_encoder = safe_load("risk_label_encoder.pkl")
 dropout_model = safe_load("dropout_model.pkl")
 dropout_encoder = safe_load("dropout_label_encoder.pkl")
 
-# ===========================================================
-# FEATURE ENGINEERING
-# ===========================================================
+# Feature Engineering
 def compute_features(student_row):
     curr_sem = int(student_row.get("CURR_SEM", 1) or 1)
 
@@ -183,9 +133,7 @@ def compute_features(student_row):
         "prev_att": round(prev_att, 2),
     }
 
-# ===========================================================
-# MODEL PREDICTION
-# ===========================================================
+# Model Prediction
 def predict_student(f):
     if not all(
         [
@@ -228,16 +176,10 @@ def predict_student(f):
         "dropout_label": str(drop),
     }
 
-# ===========================================================
-# LOAD DS3 FOR ANALYTICS - NOW FROM MYSQL
-# ===========================================================
 def load_ds3_data():
-    """Load student data from MySQL - SINGLE SOURCE OF TRUTH"""
     return load_students_df()
 
-# ===========================================================
-# GROUP ANALYSIS
-# ===========================================================
+# Group Analysis
 def safe_int(v, default=0):
     try:
         if v is None or (isinstance(v, float) and np.isnan(v)):
@@ -387,18 +329,12 @@ def analyze_subset(df):
         "table": table,
     }
 
-# ===========================================================
-# ROUTES
-# ===========================================================
+# API Routes
 @app.route("/")
 def index():
     return render_template("index.html")
 
-# Chat-based assistant disabled for current release
-# @app.route("/api/chat", methods=["POST"])
-# def api_chat():
-#     """NLP Chat Assistant for analytics queries - DISABLED"""
-#     return jsonify({"success": False, "message": "Chat assistant is currently disabled"})
+
 
 @app.route("/api/stats")
 def api_stats():
@@ -562,170 +498,11 @@ def api_college():
         print(f"[ERR] College analysis: {e}")
         return jsonify({"success": False, "message": f"Analysis failed: {str(e)}"}), 500
 
-@app.route("/api/batch/analyze", methods=["POST"])
-def api_batch_analyze():
-    """Analyze batch performance data"""
-    try:
-        data = request.get_json(silent=True) or {}
-        batch_year = data.get("batch_year")
-        
-        if not batch_year:
-            return jsonify({"success": False, "message": "Batch year is required"}), 400
-        
-        df = load_ds3_data().copy()
-        if df.empty:
-            return jsonify({"success": False, "message": "No data available"}), 400
-        
-        # Create batch_year column if it doesn't exist
-        if 'batch_year' not in df.columns:
-            df['batch_year'] = df['YEAR'].apply(lambda x: 2022 + int(x) if pd.notna(x) else 2025)
-        
-        # Filter by batch_year
-        batch_df = df[df["batch_year"].fillna(0).astype(int) == int(batch_year)]
-        
-        if batch_df.empty:
-            return jsonify({"success": False, "message": f"No students found for batch {batch_year}"}), 400
-        
-        # Calculate KPIs
-        total_students = len(batch_df)
-        avg_performance = float(batch_df["performance_overall"].fillna(0).mean())
-        high_risk_count = len(batch_df[batch_df["risk_score"].fillna(0) > 70])
-        high_risk_pct = (high_risk_count / total_students * 100) if total_students > 0 else 0
-        avg_dropout = float(batch_df["dropout_score"].fillna(0).mean())
-        top_performers = len(batch_df[batch_df["performance_label"] == "high"])
-        top_performers_pct = (top_performers / total_students * 100) if total_students > 0 else 0
-        
-        # Distribution counts
-        perf_counts = batch_df["performance_label"].fillna("unknown").value_counts().to_dict()
-        risk_counts = batch_df["risk_label"].fillna("unknown").value_counts().to_dict()
-        dropout_counts = batch_df["dropout_label"].fillna("unknown").value_counts().to_dict()
-        
-        # Semester trend data
-        sem_cols = [f"SEM{i}" for i in range(1, 9)]
-        sem_averages = []
-        for sem in sem_cols:
-            if sem in batch_df.columns:
-                avg_mark = float(batch_df[sem].fillna(0).replace('', 0).astype(float).mean())
-                sem_averages.append(avg_mark if avg_mark > 0 else None)
-            else:
-                sem_averages.append(None)
-        
-        # Generate insights
-        insights = generate_batch_insights(batch_year, total_students, high_risk_pct, avg_performance, top_performers_pct)
-        
-        return jsonify({
-            "success": True,
-            "batch_year": batch_year,
-            "stats": {
-                "total_students": total_students,
-                "avg_performance": round(avg_performance, 2),
-                "high_risk_pct": round(high_risk_pct, 1),
-                "avg_dropout": round(avg_dropout, 2),
-                "top_performers_pct": round(top_performers_pct, 1)
-            },
-            "distributions": {
-                "performance": perf_counts,
-                "risk": risk_counts,
-                "dropout": dropout_counts
-            },
-            "semester_trend": sem_averages,
-            "insights": insights
-        })
-        
-    except Exception as e:
-        print(f"[ERR] Batch analysis: {e}")
-        return jsonify({"success": False, "message": f"Analysis failed: {str(e)}"}), 500
 
-@app.route("/api/batch/students", methods=["POST"])
-def api_batch_students():
-    """Get filtered students for batch drill-down"""
-    try:
-        data = request.get_json(silent=True) or {}
-        batch_year = data.get("scope_value")
-        filter_type = data.get("filter_type")
-        filter_value = data.get("filter_value")
-        
-        if not all([batch_year, filter_type, filter_value]):
-            return jsonify({"success": False, "message": "Missing required parameters"}), 400
-        
-        df = load_ds3_data().copy()
-        if df.empty:
-            return jsonify({"success": False, "message": "No data available"}), 400
-        
-        # Create batch_year column if it doesn't exist
-        if 'batch_year' not in df.columns:
-            df['batch_year'] = df['YEAR'].apply(lambda x: 2022 + int(x) if pd.notna(x) else 2025)
-        
-        # Filter by batch_year and category
-        filtered_df = df[
-            (df["batch_year"].fillna(0).astype(int) == int(batch_year)) &
-            (df[filter_type].fillna("unknown") == filter_value)
-        ]
-        
-        # Prepare student list
-        students = []
-        for _, row in filtered_df.iterrows():
-            student = {
-                "RNO": str(row.get("RNO", "")),
-                "NAME": str(row.get("NAME", "")),
-                "DEPT": str(row.get("DEPT", "")),
-                "YEAR": safe_int(row.get("YEAR", 0)),
-                "batch_year": safe_int(row.get("batch_year", 0)),
-                "performance_label": str(row.get("performance_label", "unknown")),
-                "risk_label": str(row.get("risk_label", "unknown")),
-                "dropout_label": str(row.get("dropout_label", "unknown"))
-            }
-            students.append(student)
-        
-        return jsonify({
-            "success": True,
-            "students": to_py(students),
-            "count": len(students),
-            "filter_info": {
-                "batch_year": batch_year,
-                "category": filter_type,
-                "value": filter_value
-            }
-        })
-        
-    except Exception as e:
-        print(f"[ERR] Batch students: {e}")
-        return jsonify({"success": False, "message": f"Failed to get students: {str(e)}"}), 500
 
-def generate_batch_insights(batch_year, total, high_risk_pct, avg_perf, top_perf_pct):
-    """Generate batch insights and recommendations"""
-    insights = []
-    
-    if high_risk_pct > 30:
-        insights.append(f"⚠️ Critical: {high_risk_pct:.1f}% of students are high-risk. Immediate intervention required.")
-    elif high_risk_pct > 15:
-        insights.append(f"⚠️ Warning: {high_risk_pct:.1f}% of students are high-risk. Enhanced monitoring recommended.")
-    else:
-        insights.append(f"✅ Good: Only {high_risk_pct:.1f}% of students are high-risk.")
-    
-    if avg_perf < 60:
-        insights.append(f"📉 Batch {batch_year} shows below-average performance ({avg_perf:.1f}%). Academic support needed.")
-    elif avg_perf > 80:
-        insights.append(f"📈 Excellent: Batch {batch_year} shows strong performance ({avg_perf:.1f}%).")
-    
-    if top_perf_pct < 20:
-        insights.append(f"🎯 Focus needed: Only {top_perf_pct:.1f}% are top performers. Consider advanced programs.")
-    
-    # Recommendations
-    recommendations = []
-    if high_risk_pct > 20:
-        recommendations.append("📋 Schedule immediate counseling sessions for high-risk students")
-        recommendations.append("👥 Implement peer mentoring programs")
-    
-    if avg_perf < 70:
-        recommendations.append("📚 Provide additional academic resources and tutoring")
-        recommendations.append("🔄 Review curriculum delivery methods")
-    
-    return {
-        "summary": f"Batch {batch_year} analysis: {total} students with {avg_perf:.1f}% average performance.",
-        "insights": insights,
-        "recommendations": recommendations
-    }
+
+
+
 
 @app.route("/api/send-alert", methods=["POST"])
 def api_send_alert():
@@ -776,7 +553,6 @@ def api_send_alert():
       <tr><td style="padding: 5px 0; font-weight: bold;">Register Number:</td><td style="padding: 5px 0;">{student_data.get('RNO', 'N/A')}</td></tr>
       <tr><td style="padding: 5px 0; font-weight: bold;">Department:</td><td style="padding: 5px 0;">{student_data.get('DEPT', 'N/A')}</td></tr>
       <tr><td style="padding: 5px 0; font-weight: bold;">Year:</td><td style="padding: 5px 0;">{student_data.get('YEAR', 'N/A')}</td></tr>
-      <tr><td style="padding: 5px 0; font-weight: bold;">Batch Year:</td><td style="padding: 5px 0;">{student_data.get('batch_year', 'N/A')}</td></tr>
     </table>
     
     <h3 style="color: #495057; border-bottom: 2px solid #e9ecef; padding-bottom: 10px;">Academic Summary</h3>
@@ -825,9 +601,7 @@ def api_send_alert():
         print("[ERR] send alert:", e)
         return jsonify({"success": False, "message": str(e)}), 500
 
-# ===========================================================
-# DS3 NORMALIZATION FUNCTIONS
-# ===========================================================
+# Data Processing
 def clean_data(df):
     """Clean and normalize raw dataset"""
     df_clean = df.copy()
@@ -889,23 +663,7 @@ def clean_data(df):
     
     return df_clean
 
-def create_ds3_dataset(df_raw):
-    """Create DS3 analytics-ready dataset from raw data"""
-    ds3_rows = []
-    
-    for _, row in df_raw.iterrows():
-        st = row.to_dict()
-        feats = compute_features(st)
-        preds = predict_student(feats)
-        
-        # Merge raw data + features + predictions
-        ds3_row = st.copy()
-        ds3_row.update(feats)
-        ds3_row.update(preds)
-        
-        ds3_rows.append(ds3_row)
-    
-    return pd.DataFrame(ds3_rows)
+
 
 @app.route("/api/analytics/preview", methods=["GET"])
 def api_analytics_preview():
@@ -949,6 +707,81 @@ def api_analytics_preview():
         },
         "students": sample_students
     })
+
+@app.route("/api/analytics/drilldown", methods=["POST"])
+def api_analytics_drilldown():
+    """Get filtered students based on chart segment click"""
+    try:
+        data = request.get_json(silent=True) or {}
+        
+        filter_type = data.get("filter_type", "")  # e.g., "performance_label", "risk_label", "dropout_label"
+        filter_value = data.get("filter_value", "")  # e.g., "high", "medium", "low"
+        scope = data.get("scope", "")  # e.g., "department", "year", "college", "batch"
+        scope_value = data.get("scope_value", "")  # e.g., "CSE" or "3"
+        
+        if not filter_type or not filter_value:
+            return jsonify({"success": False, "message": "Filter type and value are required"}), 400
+        
+        # Load data
+        df = load_students_df().copy()
+        
+        if df.empty:
+            return jsonify({"success": False, "message": "No data available"}), 400
+        
+        # Apply scope filter first
+        if scope == "department" and scope_value:
+            df = df[df["DEPT"].astype(str).str.strip() == str(scope_value).strip()]
+        elif scope == "year" and scope_value:
+            try:
+                year_val = int(scope_value)
+                df = df[df["YEAR"].fillna(0).astype(int) == year_val]
+            except:
+                pass
+        
+        # If predictions are missing, compute them
+        results = []
+        for _, row in df.iterrows():
+            st = row.to_dict()
+            
+            # Check if predictions exist
+            if ('performance_label' not in st or st.get('performance_label') in [None, '', 'nan', 'unknown']):
+                feats = compute_features(st)
+                preds = predict_student(feats)
+                st.update(feats)
+                st.update(preds)
+            
+            # Apply filter
+            label_value = str(st.get(filter_type, 'unknown')).lower()
+            if label_value == str(filter_value).lower():
+                results.append({
+                    "RNO": str(st.get("RNO", "")),
+                    "NAME": str(st.get("NAME", "")),
+                    "DEPT": str(st.get("DEPT", "")),
+                    "YEAR": safe_int(st.get("YEAR", 0)),
+                    "CURR_SEM": safe_int(st.get("CURR_SEM", 0)),
+                    "performance_label": str(st.get("performance_label", "unknown")),
+                    "risk_label": str(st.get("risk_label", "unknown")),
+                    "dropout_label": str(st.get("dropout_label", "unknown")),
+                    "performance_overall": round(float(st.get("performance_overall", 0) or 0), 2),
+                    "risk_score": round(float(st.get("risk_score", 0) or 0), 2),
+                    "dropout_score": round(float(st.get("dropout_score", 0) or 0), 2),
+                })
+        
+        return jsonify({
+            "success": True,
+            "count": len(results),
+            "students": to_py(results),
+            "filter_info": {
+                "type": filter_type,
+                "value": filter_value,
+                "scope": scope,
+                "scope_value": scope_value
+            }
+        })
+        
+    except Exception as e:
+        print(f"[ERR] Drilldown API: {e}")
+        return jsonify({"success": False, "message": f"Drilldown failed: {str(e)}"}), 500
 
 @app.route("/api/batch-upload", methods=["POST"])
 def api_batch_upload():
@@ -1025,45 +858,9 @@ def api_batch_upload():
         print(f"[ERR] batch upload: {e}")
         return jsonify({"success": False, "message": f"Upload failed: {str(e)}"}), 500
 
-def send_dropout_alerts(high_dropout_students):
-    """Send email alerts for high dropout risk students"""
-    alerts_sent = 0
-    
-    for student in high_dropout_students:
-        try:
-            FROM = "ashokkumarboya93@gmail.com"
-            PASS = "lubwbacntoubetxb"
-            
-            msg = MIMEMultipart()
-            msg["From"] = FROM
-            msg["To"] = student["email"]
-            msg["Subject"] = f"Alert: High Dropout Risk - {student['name']}"
-            body = f"""Dear Mentor,
 
-This is an automated alert regarding student {student['name']} (RNO: {student['rno']}).
 
-The student has been identified as HIGH DROPOUT RISK with a dropout score of {student['dropout_score']}.
-
-Please take immediate action to counsel and support the student.
-
-Best regards,
-Student Analytics System"""
-            msg.attach(MIMEText(body, "plain"))
-            
-            server = smtplib.SMTP("smtp.gmail.com", 587)
-            server.starttls()
-            server.login(FROM, PASS)
-            server.send_message(msg)
-            server.quit()
-            alerts_sent += 1
-        except Exception as e:
-            print(f"[WARN] Email failed for {student['email']}: {e}")
-    
-    return alerts_sent
-
-# ===========================================================
-# CRUD API ENDPOINTS - MYSQL FIRST
-# ===========================================================
+# CRUD Operations
 
 @app.route("/api/student/create", methods=["POST"])
 def api_create_student():
@@ -1347,149 +1144,9 @@ def api_list_students():
         print(f"[ERR] List students: {e}")
         return jsonify({"success": False, "message": f"Failed to list students: {str(e)}"}), 500
 
-@app.route("/api/batch-analytics", methods=["POST"])
-def api_batch_analytics():
-    data = request.get_json(silent=True) or {}
-    batch_year = data.get("batch_year", "2025")
-    
-    try:
-        ds2_path = os.path.join(DATA_DIR, "DS2_ml_ready.csv")
-        if not os.path.exists(ds2_path):
-            return jsonify({"success": False, "message": "No analytics data available"}), 400
-        
-        df = pd.read_csv(ds2_path)
-        df['batch_year'] = df['YEAR'].apply(lambda x: 2022 + int(x) if pd.notna(x) else 2025)
-        batch_df = df[df['batch_year'] == int(batch_year)]
-        
-        if batch_df.empty:
-            return jsonify({"success": False, "message": f"No data found for batch {batch_year}"}), 400
-        
-        total_students = len(batch_df)
-        avg_performance = batch_df['performance_overall'].mean()
-        high_risk_count = len(batch_df[batch_df['risk_score'] > 70])
-        high_risk_pct = (high_risk_count / total_students) * 100
-        dropout_avg = batch_df['dropout_score'].mean()
-        top_performers = len(batch_df[batch_df['performance_label'] == 'high'])
-        top_performers_pct = (top_performers / total_students) * 100
-        
-        perf_dist = batch_df['performance_label'].value_counts().to_dict()
-        risk_dist = batch_df['risk_label'].value_counts().to_dict()
-        dropout_dist = batch_df['dropout_label'].value_counts().to_dict()
-        
-        sem_cols = ['SEM1', 'SEM2', 'SEM3', 'SEM4', 'SEM5', 'SEM6', 'SEM7', 'SEM8']
-        sem_trends = []
-        for sem in sem_cols:
-            if sem in batch_df.columns:
-                avg_marks = batch_df[sem].dropna().mean()
-                sem_trends.append(avg_marks if not pd.isna(avg_marks) else 0)
-            else:
-                sem_trends.append(0)
-        
-        declining_students = 0
-        for _, row in batch_df.iterrows():
-            sem_marks = [row.get(f'SEM{i}', 0) for i in range(1, 9) if pd.notna(row.get(f'SEM{i}', 0)) and row.get(f'SEM{i}', 0) > 0]
-            if len(sem_marks) >= 2 and sem_marks[-1] < sem_marks[0]:
-                declining_students += 1
-        
-        declining_pct = (declining_students / total_students) * 100
-        silent_risk = len(batch_df[(batch_df['performance_label'] == 'medium') & (batch_df['dropout_label'] == 'high')])
-        low_att_high_risk = len(batch_df[(batch_df['attendance_pct'] < 75) & (batch_df['risk_label'] == 'high')])
-        
-        return jsonify({
-            "success": True,
-            "batch_year": batch_year,
-            "kpis": {
-                "total_students": total_students,
-                "avg_performance": round(avg_performance, 1),
-                "high_risk_pct": round(high_risk_pct, 1),
-                "dropout_avg": round(dropout_avg, 1),
-                "top_performers_pct": round(top_performers_pct, 1)
-            },
-            "distributions": {
-                "performance": perf_dist,
-                "risk": risk_dist,
-                "dropout": dropout_dist
-            },
-            "trends": {
-                "semesters": ['SEM1', 'SEM2', 'SEM3', 'SEM4', 'SEM5', 'SEM6', 'SEM7', 'SEM8'],
-                "marks": sem_trends
-            },
-            "deep_analytics": {
-                "declining_pct": round(declining_pct, 1),
-                "silent_risk": silent_risk,
-                "attendance_risk_correlation": low_att_high_risk
-            }
-        })
-        
-    except Exception as e:
-        print(f"[ERR] batch analytics: {e}")
-        return jsonify({"success": False, "message": f"Analysis failed: {str(e)}"}), 500
 
-@app.route("/api/analytics/drilldown", methods=["POST"])
-def api_analytics_drilldown():
-    """Universal drill-down API for all analytics views"""
-    try:
-        data = request.get_json(silent=True) or {}
-        filter_type = data.get("filter_type")
-        filter_value = data.get("filter_value")
-        scope = data.get("scope", "all")
-        scope_value = data.get("scope_value")
-        
-        # Use DS3 as primary data source
-        df = load_ds3_data()
-        if df.empty:
-            return jsonify({"success": False, "message": "No data available"}), 400
-        
-        # Apply scope filter first
-        if scope != "all" and scope_value:
-            if scope == "student":
-                df = df[df["RNO"].astype(str).str.strip() == str(scope_value)]
-            elif scope == "dept":
-                df = df[df["DEPT"].astype(str).str.strip() == str(scope_value)]
-            elif scope == "year":
-                df = df[df["YEAR"].fillna(0).astype(int) == int(scope_value)]
-            elif scope == "batch":
-                if 'batch_year' not in df.columns:
-                    df['batch_year'] = df['YEAR'].apply(lambda x: 2022 + int(x) if pd.notna(x) else 2025)
-                df = df[df["batch_year"].fillna(0).astype(int) == int(scope_value)]
-            elif scope == "college":
-                # No additional filter for college-wide
-                pass
-        
-        # Apply category filter
-        if filter_type and filter_value and filter_type in df.columns:
-            df = df[df[filter_type].fillna("unknown") == filter_value]
-        
-        # Prepare student list with required columns only
-        students = []
-        for _, row in df.iterrows():
-            student = {
-                "RNO": str(row.get("RNO", "")),
-                "NAME": str(row.get("NAME", "")),
-                "DEPT": str(row.get("DEPT", "")),
-                "YEAR": safe_int(row.get("YEAR", 0)),
-                "batch_year": safe_int(row.get("batch_year", 0)),
-                "performance_label": str(row.get("performance_label", "unknown")),
-                "risk_label": str(row.get("risk_label", "unknown")),
-                "dropout_label": str(row.get("dropout_label", "unknown"))
-            }
-            students.append(student)
-        
-        return jsonify({
-            "success": True,
-            "students": to_py(students),
-            "count": len(students),
-            "filter_info": {
-                "filter_type": filter_type,
-                "filter_value": filter_value,
-                "scope": scope,
-                "scope_value": scope_value
-            }
-        })
-        
-    except Exception as e:
-        print(f"[ERR] Universal drilldown: {e}")
-        return jsonify({"success": False, "message": f"Drilldown failed: {str(e)}"}), 500
+
+
 
 if FPDF_AVAILABLE:
     class EnhancedPDF(FPDF):
@@ -1630,7 +1287,7 @@ def create_performance_chart(data, chart_type='student'):
                 ax4.set_ylabel('Marks (%)', fontweight='bold')
                 ax4.grid(True, alpha=0.3)
     
-    elif chart_type in ['department', 'year', 'college', 'batch']:
+    elif chart_type in ['department', 'year', 'college']:
         if 'label_counts' in data:
             label_counts = data['label_counts']
             
@@ -1702,8 +1359,7 @@ def api_export_report():
             "student": "Student Performance Report",
             "department": "Department Analytics Report", 
             "year": "Year Analytics Report",
-            "college": "College Analytics Report",
-            "batch": "Batch Analytics Report"
+            "college": "College Analytics Report"
         }
         
         pdf.set_font('Arial', 'B', 18)
@@ -1914,6 +1570,583 @@ def api_export_report():
     except Exception as e:
         print(f"[ERR] PDF export: {e}")
         return jsonify({"success": False, "message": f"PDF export failed: {str(e)}"}), 500
+
+# NLP Intent Detection for Chat Assistant
+def detect_intent(user_prompt):
+    """Convert user natural language to structured analytics instruction"""
+    prompt = user_prompt.lower().strip()
+    
+    intent = {
+        "action": "unknown",
+        "metric": "performance",
+        "scope": "college",
+        "filters": {},
+        "order": "desc",
+        "limit": 10
+    }
+    
+    import re
+    
+    # Enhanced roll number detection - highest priority
+    roll_patterns = [
+        r'\b(\d{2}[a-z]\d{2}[a-z]\d{4})\b',      # 22G31A3167
+        r'\b([a-z]{2,4}\d{4}[a-z]?\d{3,4})\b',   # CSE2021001, ECE21A001
+        r'\b(\d{2}[a-z]{2,4}\d{3,4})\b',          # 21CSE001
+        r'\b([a-z]\d{8,10})\b',                    # A2021001234
+        r'\b(\d{10,12})\b',                        # 202100123456
+        r'\b([a-z]{3}\d{6,8})\b',                  # CSE2021001
+        r'\b(\d{4}[a-z]{2,4}\d{3,4})\b',          # 2021CSE001
+        r'\b([a-z]{2,4}\d{2}[a-z]\d{3,4})\b'      # CSE21A001
+    ]
+    
+    # Check for roll numbers in any context
+    for pattern in roll_patterns:
+        roll_match = re.search(pattern, prompt, re.IGNORECASE)
+        if roll_match:
+            roll_number = roll_match.group(1).upper()
+            intent["action"] = "student_analytics"
+            intent["filters"]["roll_number"] = roll_number
+            intent["scope"] = "student"
+            return intent
+    
+    # Check for roll numbers with common keywords
+    roll_keywords = ["analytics", "analysis", "performance", "report", "details", "info", "show", "student", "for"]
+    if any(word in prompt for word in roll_keywords):
+        # More flexible roll number detection
+        flexible_patterns = [
+            r'\b(\d{2}[a-z]\d{2}[a-z]\d{4})\b',      # 22G31A3167
+            r'\b([a-z]{2,4}\d{4}[a-z]?\d{3,4})\b',   # CSE2021001
+            r'\b(\d{2}[a-z]{2,4}\d{3,4})\b',          # 21CSE001
+            r'\b(\d{4}[a-z]{2,4}\d{3,4})\b'           # 2021CSE001
+        ]
+        
+        for pattern in flexible_patterns:
+            roll_match = re.search(pattern, prompt, re.IGNORECASE)
+            if roll_match:
+                roll_number = roll_match.group(1).upper()
+                intent["action"] = "student_analytics"
+                intent["filters"]["roll_number"] = roll_number
+                intent["scope"] = "student"
+                return intent
+    
+    # Action detection - order matters for priority
+    if any(word in prompt for word in ["risk", "danger", "at-risk", "risky"]) and any(word in prompt for word in ["high", "students"]):
+        intent["action"] = "high_risk"
+        intent["metric"] = "risk"
+    elif any(word in prompt for word in ["dropout", "drop", "leave", "quit"]) and any(word in prompt for word in ["high", "students"]):
+        intent["action"] = "high_dropout"
+        intent["metric"] = "dropout"
+    elif any(word in prompt for word in ["top", "best", "high"]) and any(word in prompt for word in ["perform", "student"]):
+        intent["action"] = "top_performers"
+    elif any(word in prompt for word in ["weak", "low", "poor", "bad", "worst"]) and any(word in prompt for word in ["perform", "student"]):
+        intent["action"] = "low_performers"
+    elif any(word in prompt for word in ["attendance", "attend", "absent"]):
+        intent["action"] = "attendance_analysis"
+    elif any(word in prompt for word in ["compare", "comparison", "vs", "versus"]):
+        intent["action"] = "comparison"
+    elif any(word in prompt for word in ["department", "dept", "analytics", "analysis"]):
+        intent["action"] = "department_analysis"
+    
+    # Scope detection
+    if "department" in prompt or "dept" in prompt:
+        intent["scope"] = "department"
+    elif "year" in prompt:
+        intent["scope"] = "year"
+    elif "batch" in prompt:
+        intent["scope"] = "batch"
+    
+    # Enhanced filter detection
+    dept_match = re.search(r'\b(cse|ece|mech|civil|eee|it|cds|cai|ai|ml|ds|cyber|auto|aero|bio|chem)\b', prompt, re.IGNORECASE)
+    if dept_match:
+        dept_code = dept_match.group(1).upper()
+        dept_mapping = {'AI': 'CAI', 'ML': 'CAI', 'DS': 'CDS'}
+        intent["filters"]["dept"] = dept_mapping.get(dept_code, dept_code)
+    
+    year_match = re.search(r'\b(1st|2nd|3rd|4th|first|second|third|fourth|1|2|3|4)\s*year\b|\byear\s*(1|2|3|4)\b', prompt, re.IGNORECASE)
+    if year_match:
+        year_text = year_match.group(0).lower()
+        year_map = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "first": 1, "second": 2, "third": 3, "fourth": 4, "1": 1, "2": 2, "3": 3, "4": 4}
+        for key, val in year_map.items():
+            if key in year_text:
+                intent["filters"]["year"] = val
+                break
+    
+    batch_match = re.search(r'\b(20\d{2})\b', prompt)
+    if batch_match:
+        intent["filters"]["batch_year"] = int(batch_match.group(1))
+    
+    num_match = re.search(r'\b(\d+)\b', prompt)
+    if num_match:
+        intent["limit"] = min(int(num_match.group(1)), 50)
+    
+    return intent
+
+def execute_analytics_query(intent):
+    """Execute analytics based on detected intent"""
+    try:
+        df = load_ds3_data()
+        if df.empty:
+            return {"error": "No student data available in the database. Please upload student data first."}
+        
+        print(f"[DEBUG] Loaded {len(df)} students for analysis")
+        print(f"[DEBUG] Available departments: {sorted(df['DEPT'].dropna().unique().tolist())}")
+        print(f"[DEBUG] Available years: {sorted(df['YEAR'].dropna().unique().tolist())}")
+        print(f"[DEBUG] Intent filters: {intent['filters']}")
+        
+        # Handle student-specific analytics (roll number query)
+        if intent["action"] == "student_analytics" and "roll_number" in intent["filters"]:
+            roll_number = intent["filters"]["roll_number"]
+            print(f"[DEBUG] Searching for student with roll number: {roll_number}")
+            
+            # Enhanced flexible matching for roll numbers
+            student_row = None
+            for _, row in df.iterrows():
+                student_rno = str(row.get('RNO', '')).upper().strip()
+                # Multiple matching strategies
+                if (student_rno == roll_number or 
+                    roll_number in student_rno or 
+                    student_rno in roll_number or
+                    student_rno.replace(' ', '') == roll_number.replace(' ', '') or
+                    ''.join(filter(str.isalnum, student_rno)) == ''.join(filter(str.isalnum, roll_number))):
+                    student_row = row
+                    break
+            
+            if student_row is None:
+                return {
+                    "error": f"Student with roll number '{roll_number}' not found. Please check the roll number and try again.",
+                    "suggestion": "Try entering the complete roll number or check for typos. Examples: 22G31A3167, CSE2021001, 21CSE001"
+                }
+            
+            # Get comprehensive student data
+            student_dict = student_row.to_dict()
+            
+            # Compute features and predictions
+            try:
+                feats = compute_features(student_dict)
+                preds = predict_student(feats)
+            except Exception as e:
+                print(f"[WARN] Feature computation failed: {e}")
+                feats = {
+                    "past_avg": 0.0, "past_count": 0, "internal_pct": 0.0,
+                    "attendance_pct": 0.0, "behavior_pct": 0.0, "performance_trend": 0.0,
+                    "performance_overall": 0.0, "risk_score": 0.0, "dropout_score": 0.0,
+                    "present_att": 0.0, "prev_att": 0.0
+                }
+                preds = {
+                    "performance_label": "unknown",
+                    "risk_label": "unknown", 
+                    "dropout_label": "unknown"
+                }
+            
+            # Create comprehensive student analytics response
+            student_name = student_dict.get('NAME', 'Student')
+            student_rno = student_dict.get('RNO', roll_number)
+            
+            # Generate detailed KPIs
+            kpis = {
+                "performance_score": feats["performance_overall"],
+                "risk_score": feats["risk_score"],
+                "dropout_score": feats["dropout_score"],
+                "attendance_rate": feats["attendance_pct"],
+                "internal_marks": feats["internal_pct"],
+                "behavior_score": feats["behavior_pct"],
+                "semester_trend": feats["performance_trend"]
+            }
+            
+            # Generate recommendations
+            recommendations = generate_student_recommendations(feats, preds)
+            
+            return {
+                "action": "student_analytics",
+                "title": f"Complete Analytics for {student_name} ({student_rno})",
+                "student_info": {
+                    "name": student_name,
+                    "rno": student_rno,
+                    "dept": student_dict.get('DEPT', 'N/A'),
+                    "year": student_dict.get('YEAR', 'N/A'),
+                    "semester": student_dict.get('CURR_SEM', 'N/A'),
+                    "email": student_dict.get('EMAIL', 'N/A'),
+                    "mentor": student_dict.get('MENTOR', 'N/A')
+                },
+                "kpis": kpis,
+                "predictions": preds,
+                "features": feats,
+                "recommendations": recommendations,
+                "semester_data": {
+                    f"SEM{i}": student_dict.get(f"SEM{i}", 0) for i in range(1, 9)
+                },
+                "insight": f"Comprehensive analytics for {student_name}: Performance is {preds['performance_label'].upper()} ({feats['performance_overall']:.1f}%), Risk level is {preds['risk_label'].upper()}, Attendance at {feats['attendance_pct']:.1f}%. {'⚠️ Requires immediate attention!' if preds['risk_label'] == 'high' or preds['dropout_label'] == 'high' else '✅ Student is performing well.' if preds['performance_label'] == 'high' else '📊 Moderate performance - monitor closely.'}"
+            }
+        
+        # Handle group analytics
+        filtered_df = df.copy()
+        
+        # Apply filters with debugging
+        if "dept" in intent["filters"]:
+            dept_filter = intent["filters"]["dept"]
+            print(f"[DEBUG] Filtering by department: {dept_filter}")
+            # Try exact match first, then partial match
+            exact_match = filtered_df[filtered_df["DEPT"].astype(str).str.upper() == dept_filter]
+            if not exact_match.empty:
+                filtered_df = exact_match
+            else:
+                # Try partial match
+                partial_match = filtered_df[filtered_df["DEPT"].astype(str).str.upper().str.contains(dept_filter, na=False)]
+                if not partial_match.empty:
+                    filtered_df = partial_match
+                else:
+                    available_depts = sorted(df["DEPT"].dropna().unique().tolist())
+                    return {"error": f"No students found for department '{dept_filter}'. Available departments: {', '.join(available_depts)}"}
+            print(f"[DEBUG] After dept filter: {len(filtered_df)} students")
+        
+        if "year" in intent["filters"]:
+            year_filter = intent["filters"]["year"]
+            print(f"[DEBUG] Filtering by year: {year_filter}")
+            filtered_df = filtered_df[filtered_df["YEAR"].fillna(0).astype(int) == year_filter]
+            print(f"[DEBUG] After year filter: {len(filtered_df)} students")
+        
+        if "batch_year" in intent["filters"]:
+            batch_filter = intent["filters"]["batch_year"]
+            if "BATCH_YEAR" in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df["BATCH_YEAR"].fillna(0).astype(int) == batch_filter]
+                print(f"[DEBUG] Filtered by batch {batch_filter}: {len(filtered_df)} students")
+        
+        if filtered_df.empty:
+            available_depts = sorted(df["DEPT"].dropna().unique().tolist())
+            available_years = sorted(df["YEAR"].dropna().unique().tolist())
+            filters_used = []
+            if "dept" in intent["filters"]:
+                filters_used.append(f"Department: {intent['filters']['dept']}")
+            if "year" in intent["filters"]:
+                filters_used.append(f"Year: {intent['filters']['year']}")
+            
+            return {
+                "error": f"No students found for {', '.join(filters_used) if filters_used else 'your criteria'}.",
+                "suggestion": f"Available departments: {', '.join(available_depts)}. Available years: {', '.join(map(str, available_years))}. Try: 'CSE department analytics' or '2nd year analytics'"
+            }
+        
+        # Analyze the filtered data
+        analysis = analyze_subset(filtered_df)
+        action = intent["action"]
+        limit = intent["limit"]
+        
+        print(f"[DEBUG] Analysis complete. Action: {action}, Students: {len(analysis['table'])}")
+        
+        if action == "top_performers":
+            sorted_students = sorted(analysis["table"], key=lambda x: x.get("performance_overall", 0), reverse=True)[:limit]
+            return {
+                "action": "top_performers",
+                "title": f"Top {len(sorted_students)} Performers",
+                "students": sorted_students,
+                "stats": analysis["stats"],
+                "insight": f"Found {len(sorted_students)} top performing students with average performance of {analysis['stats']['avg_performance']:.1f}%"
+            }
+        
+        elif action == "low_performers":
+            sorted_students = sorted(analysis["table"], key=lambda x: x.get("performance_overall", 0))[:limit]
+            return {
+                "action": "low_performers",
+                "title": f"Students Needing Support ({len(sorted_students)})",
+                "students": sorted_students,
+                "stats": analysis["stats"],
+                "insight": f"Found {len(sorted_students)} students who may need additional academic support"
+            }
+        
+        elif action == "high_risk":
+            high_risk_students = [s for s in analysis["table"] if s.get("risk_label") == "high"][:limit]
+            return {
+                "action": "high_risk",
+                "title": f"High-Risk Students ({len(high_risk_students)})",
+                "students": high_risk_students,
+                "stats": analysis["stats"],
+                "insight": f"These {len(high_risk_students)} students require immediate mentoring and intervention"
+            }
+        
+        elif action == "high_dropout":
+            high_dropout_students = [s for s in analysis["table"] if s.get("dropout_label") == "high"][:limit]
+            return {
+                "action": "high_dropout",
+                "title": f"Dropout Risk Students ({len(high_dropout_students)})",
+                "students": high_dropout_students,
+                "stats": analysis["stats"],
+                "insight": f"These {len(high_dropout_students)} students have high dropout probability and need retention support"
+            }
+        
+        elif action == "department_analysis":
+            # Check if we have department and year filters
+            dept_filter = intent["filters"].get("dept")
+            year_filter = intent["filters"].get("year")
+            
+            if dept_filter and year_filter:
+                # Specific department and year analysis
+                dept_df = filtered_df[filtered_df["DEPT"].astype(str).str.upper() == dept_filter]
+                year_df = dept_df[dept_df["YEAR"].fillna(0).astype(int) == year_filter]
+                
+                if year_df.empty:
+                    return {"error": f"No students found for {dept_filter} department, year {year_filter}"}
+                
+                dept_analysis = analyze_subset(year_df)
+                return {
+                    "action": "department_analysis",
+                    "title": f"{dept_filter} Department Year {year_filter} Analytics",
+                    "stats": dept_analysis["stats"],
+                    "label_counts": dept_analysis["label_counts"],
+                    "scores": dept_analysis["scores"],
+                    "students": dept_analysis["table"],
+                    "insight": f"{dept_filter} Department Year {year_filter}: {dept_analysis['stats']['total_students']} students analyzed, Average Performance: {dept_analysis['stats']['avg_performance']:.1f}%, High Risk: {dept_analysis['stats']['high_risk']} students"
+                }
+            elif dept_filter:
+                # Department-only analysis
+                dept_df = filtered_df[filtered_df["DEPT"].astype(str).str.upper() == dept_filter]
+                
+                if dept_df.empty:
+                    return {"error": f"No students found for {dept_filter} department"}
+                
+                dept_analysis = analyze_subset(dept_df)
+                return {
+                    "action": "department_analysis",
+                    "title": f"{dept_filter} Department Analytics",
+                    "stats": dept_analysis["stats"],
+                    "label_counts": dept_analysis["label_counts"],
+                    "scores": dept_analysis["scores"],
+                    "students": dept_analysis["table"],
+                    "insight": f"{dept_filter} Department: {dept_analysis['stats']['total_students']} students analyzed, Average Performance: {dept_analysis['stats']['avg_performance']:.1f}%, High Risk: {dept_analysis['stats']['high_risk']} students"
+                }
+            else:
+                # General department comparison
+                dept_stats = {}
+                for dept in df["DEPT"].dropna().unique():
+                    dept_df = df[df["DEPT"] == dept]
+                    if not dept_df.empty:
+                        dept_analysis = analyze_subset(dept_df)
+                        dept_stats[dept] = dept_analysis["stats"]
+                
+                return {
+                    "action": "department_analysis",
+                    "title": "Department Performance Comparison",
+                    "department_stats": dept_stats,
+                    "stats": analysis["stats"],
+                    "insight": f"Department-wise analysis shows performance variation across {len(dept_stats)} departments"
+                }
+        
+        elif action == "attendance_analysis":
+            # Get students with attendance data
+            students_with_attendance = [s for s in analysis["table"] if s.get("attendance_pct", 0) > 0]
+            if students_with_attendance:
+                attendance_data = [(s["attendance_pct"], s["performance_overall"]) for s in students_with_attendance]
+                avg_attendance = np.mean([a[0] for a in attendance_data])
+                avg_performance = np.mean([a[1] for a in attendance_data])
+                return {
+                    "action": "attendance_analysis",
+                    "title": "Attendance Impact Analysis",
+                    "attendance_data": attendance_data,
+                    "avg_attendance": round(avg_attendance, 2),
+                    "avg_performance": round(avg_performance, 2),
+                    "stats": analysis["stats"],
+                    "insight": f"Average attendance is {avg_attendance:.1f}% with corresponding performance of {avg_performance:.1f}%"
+                }
+            else:
+                return {"error": "No attendance data available for analysis"}
+        
+        # Default: general stats
+        return {
+            "action": "general_stats",
+            "title": "Analytics Overview",
+            "stats": analysis["stats"],
+            "students": analysis["table"][:limit],
+            "insight": f"Analyzed {analysis['stats']['total_students']} students with {analysis['stats']['high_risk']} high-risk cases identified"
+        }
+    
+    except Exception as e:
+        print(f"[ERR] Analytics query execution: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": f"Analytics processing failed: {str(e)}"}
+
+@app.route("/api/chat/test", methods=["GET"])
+def api_chat_test():
+    """Test chat functionality"""
+    try:
+        # Test data loading
+        df = load_ds3_data()
+        if df.empty:
+            return jsonify({"success": False, "message": "No student data available for chat"})
+        
+        # Test basic analytics
+        sample_size = min(len(df), 10)
+        return jsonify({
+            "success": True,
+            "message": f"Chat system ready! Found {len(df)} students in database. Sample size: {sample_size}",
+            "data_available": True,
+            "total_students": len(df)
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Chat test failed: {str(e)}"})
+
+@app.route("/api/test", methods=["GET"])
+def api_test():
+    """Simple test endpoint"""
+    return jsonify({
+        "success": True,
+        "message": "API is working!",
+        "timestamp": pd.Timestamp.now().isoformat()
+    })
+def generate_student_recommendations(features, predictions):
+    """Generate personalized recommendations for a student"""
+    recommendations = []
+    
+    # Performance-based recommendations
+    perf_score = features.get('performance_overall', 0)
+    perf_label = predictions.get('performance_label', 'unknown')
+    
+    if perf_score < 40:
+        recommendations.append("🚨 CRITICAL: Immediate academic intervention required - schedule emergency counseling within 24 hours")
+        recommendations.append("📚 Enroll in intensive remedial program with daily tutoring sessions")
+        recommendations.append("👨🏫 Assign dedicated faculty mentor for personalized guidance")
+        recommendations.append("📞 Urgent parent/guardian meeting to discuss academic support strategy")
+    elif perf_score < 60:
+        recommendations.append("⚠️ Academic support needed - schedule counseling session within 48 hours")
+        recommendations.append("📖 Provide targeted study materials and practice tests")
+        recommendations.append("👥 Arrange peer tutoring with high-performing students")
+    elif perf_score < 75:
+        recommendations.append("📈 Focus on improving study habits and time management skills")
+        recommendations.append("🎯 Set specific academic goals with weekly progress reviews")
+        recommendations.append("💡 Consider study skills workshops and learning techniques training")
+    
+    # Attendance-based recommendations
+    attendance = features.get('attendance_pct', 0)
+    if attendance < 60:
+        recommendations.append("🚨 CRITICAL ATTENDANCE ISSUE: Investigate underlying causes immediately")
+        recommendations.append("📋 Implement daily attendance monitoring with immediate follow-up")
+        recommendations.append("🏥 Check for health, transportation, or family issues affecting attendance")
+    elif attendance < 75:
+        recommendations.append("⏰ Attendance improvement plan required - below minimum 75% requirement")
+        recommendations.append("📱 Set up automated attendance alerts for parents/guardians")
+        recommendations.append("🎁 Implement attendance incentive program with rewards")
+    elif attendance < 85:
+        recommendations.append("📅 Monitor attendance trends and provide gentle reminders")
+        recommendations.append("🌟 Encourage consistent attendance with positive reinforcement")
+    
+    # Risk-based recommendations
+    risk_label = predictions.get('risk_label', 'unknown')
+    if risk_label == 'high':
+        recommendations.append("🔴 HIGH RISK ALERT: Weekly one-on-one mentor sessions mandatory")
+        recommendations.append("🧠 Conduct learning style assessment to customize teaching approach")
+        recommendations.append("📊 Implement weekly progress tracking with measurable goals")
+        recommendations.append("🤝 Connect with student counseling services for comprehensive support")
+    elif risk_label == 'medium':
+        recommendations.append("🟡 Moderate risk - bi-weekly check-ins with academic advisor")
+        recommendations.append("📚 Provide additional learning resources and study guides")
+    
+    # Dropout prevention
+    dropout_label = predictions.get('dropout_label', 'unknown')
+    if dropout_label == 'high':
+        recommendations.append("⚠️ HIGH DROPOUT RISK: Implement comprehensive retention strategy immediately")
+        recommendations.append("👨👩👧👦 Engage family support system - schedule parent conference within 48 hours")
+        recommendations.append("💰 Explore financial aid options and scholarship opportunities")
+        recommendations.append("🎯 Create personalized retention plan with clear milestones")
+        recommendations.append("🏆 Highlight student's strengths and celebrate small achievements")
+    elif dropout_label == 'medium':
+        recommendations.append("📈 Monitor closely for early warning signs of disengagement")
+        recommendations.append("💪 Focus on building student confidence and motivation")
+    
+    # Internal marks improvement
+    internal_pct = features.get('internal_pct', 0)
+    if internal_pct < 40:
+        recommendations.append("📝 URGENT: Intensive subject-specific tutoring required")
+        recommendations.append("🔍 Conduct diagnostic assessment to identify knowledge gaps")
+        recommendations.append("📖 Provide concept-building materials and visual learning aids")
+    elif internal_pct < 60:
+        recommendations.append("📊 Increase frequency of internal assessments with immediate feedback")
+        recommendations.append("🎯 Focus on concept clarity through practical examples")
+    
+    # Behavior recommendations
+    behavior_score = features.get('behavior_pct', 0)
+    if behavior_score < 50:
+        recommendations.append("🤝 Behavioral counseling and social skills development urgently needed")
+        recommendations.append("👥 Implement peer mentoring program for social integration")
+    elif behavior_score < 70:
+        recommendations.append("🌱 Encourage participation in extracurricular activities")
+        recommendations.append("🗣️ Provide communication skills training")
+    
+    # Positive reinforcement for good performers
+    if perf_score >= 85 and attendance >= 90:
+        recommendations.append("🌟 OUTSTANDING PERFORMANCE! Consider advanced learning opportunities")
+        recommendations.append("🏆 Nominate for academic excellence awards and scholarships")
+        recommendations.append("👨🏫 Encourage student to mentor struggling peers")
+        recommendations.append("🚀 Explore research projects and internship opportunities")
+    elif perf_score >= 75 and attendance >= 85:
+        recommendations.append("✅ Good performance - maintain current study routine")
+        recommendations.append("📈 Set higher academic goals for continued improvement")
+        recommendations.append("🎯 Consider leadership roles in student activities")
+    
+    # Semester trend analysis
+    trend = features.get('performance_trend', 0)
+    if trend < -10:
+        recommendations.append("📉 Declining performance trend detected - investigate causes immediately")
+        recommendations.append("🔄 Review and adjust current study strategies")
+    elif trend > 10:
+        recommendations.append("📈 Excellent improvement trend - continue current approach")
+        recommendations.append("🎉 Acknowledge and celebrate the positive progress")
+    
+    return recommendations if recommendations else ["✅ Continue current academic path with regular monitoring and support"]
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    """Process chat message and return analytics"""
+    try:
+        data = request.get_json(silent=True) or {}
+        user_message = data.get("message", "").strip()
+        
+        if not user_message:
+            return jsonify({"success": False, "message": "Please provide a message"}), 400
+        
+        if len(user_message) > 500:
+            return jsonify({"success": False, "message": "Message too long. Please keep it under 500 characters."}), 400
+        
+        print(f"[DEBUG] Processing chat message: {user_message}")
+        
+        # Detect intent
+        intent = detect_intent(user_message)
+        print(f"[DEBUG] Detected intent: {intent}")
+        
+        if intent["action"] == "unknown":
+            return jsonify({
+                "success": True,
+                "response": "Please ask about performance, risk, attendance, or dropout analytics. You can also provide a roll number for individual student analytics. Examples: 'CSE2021001', 'give analytics for 21CSE001', or 'Show top performers in CSE'",
+                "type": "error"
+            })
+        
+        # Execute query
+        result = execute_analytics_query(intent)
+        print(f"[DEBUG] Query result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+        
+        if "error" in result:
+            error_response = result["error"]
+            if "suggestion" in result:
+                error_response += f" {result['suggestion']}"
+            return jsonify({
+                "success": True,
+                "response": error_response,
+                "type": "error"
+            })
+        
+        return jsonify({
+            "success": True,
+            "response": result.get("insight", "Analytics completed successfully"),
+            "data": to_py(result),
+            "type": "analytics"
+        })
+        
+    except Exception as e:
+        print(f"[ERR] Chat API: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": True,
+            "response": f"I encountered an issue processing your request: {str(e)}. Please try a simpler query like 'show top students' or provide a roll number for individual analytics.",
+            "type": "error"
+        })
 
 if __name__ == "__main__":
     app.run(debug=True)
