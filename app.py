@@ -243,7 +243,6 @@ def analyze_subset(df):
                     try:
                         update_data = feats.copy()
                         update_data.update(preds)
-                        from db import update_student
                         update_student(st.get('RNO'), update_data)
                     except Exception as update_err:
                         print(f"[WARN] Failed to update predictions for {st.get('RNO')}: {update_err}")

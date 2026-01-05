@@ -1,178 +1,171 @@
-import mysql.connector
-from mysql.connector import Error
+from supabase import create_client, Client
 import pandas as pd
-from config import DB_CONFIG
+from config import SUPABASE_URL, SUPABASE_KEY
+import requests
 
-def get_db_connection():
+def get_supabase_client():
+    """Get Supabase client"""
     try:
-        connection = mysql.connector.connect(**DB_CONFIG)
-        return connection
-    except Error as e:
-        print(f"Error connecting to MySQL: {e}")
+        if not SUPABASE_KEY or SUPABASE_KEY == 'PUT_YOUR_ACTUAL_SUPABASE_KEY_HERE':
+            print("[WARN] Using sample data - Please set your actual Supabase API key in .env file")
+            return None
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        # Test connection
+        supabase.table('students').select('*').limit(1).execute()
+        return supabase
+    except Exception as e:
+        print(f"[WARN] Supabase connection failed, using sample data: {e}")
         return None
 
 def load_students_df():
-    """Load all students from MySQL as DataFrame - SINGLE SOURCE OF TRUTH"""
+    """Load all students from Supabase"""
     try:
-        conn = get_db_connection()
-        if not conn:
-            return pd.DataFrame()
+        supabase = get_supabase_client()
+        if supabase is None:
+            # Return sample data for testing
+            return get_sample_data()
         
-        df = pd.read_sql("SELECT * FROM students", conn)
-        conn.close()
-        
-        # Convert column names to uppercase to match existing code
-        df.columns = df.columns.str.upper()
-        
-        return df
+        response = supabase.table('students').select('*').execute()
+        if response.data:
+            df = pd.DataFrame(response.data)
+            return df
+        return get_sample_data()
     except Exception as e:
-        print(f"Error loading students from MySQL: {e}")
-        return pd.DataFrame()
+        print(f"[ERR] Load students: {e}")
+        return get_sample_data()
+
+def get_sample_data():
+    """Return sample student data for testing"""
+    sample_data = {
+        'RNO': ['22G31A3167', '22G31A3168', '22G31A3169'],
+        'NAME': ['John Doe', 'Jane Smith', 'Bob Johnson'],
+        'EMAIL': ['john@example.com', 'jane@example.com', 'bob@example.com'],
+        'DEPT': ['CSE', 'CSE', 'ECE'],
+        'YEAR': [3, 3, 3],
+        'CURR_SEM': [5, 5, 5],
+        'SEM1': [85, 90, 78],
+        'SEM2': [88, 92, 80],
+        'SEM3': [82, 89, 75],
+        'SEM4': [86, 91, 79],
+        'INTERNAL_MARKS': [25, 28, 22],
+        'TOTAL_DAYS_CURR': [90, 90, 90],
+        'ATTENDED_DAYS_CURR': [85, 88, 70],
+        'PREV_ATTENDANCE_PERC': [90, 95, 75],
+        'BEHAVIOR_SCORE_10': [8, 9, 7]
+    }
+    return pd.DataFrame(sample_data)
 
 def get_student_by_rno(rno):
-    """Get single student by RNO from MySQL"""
+    """Get student by roll number from Supabase"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM students WHERE rno = %s", (rno,))
-        student = cursor.fetchone()
-        conn.close()
+        supabase = get_supabase_client()
+        if supabase is None:
+            # Return sample student for testing
+            df = get_sample_data()
+            student_row = df[df['RNO'] == rno]
+            if not student_row.empty:
+                return student_row.iloc[0].to_dict()
+            return None
         
-        if student:
-            # Convert keys to uppercase
-            student = {k.upper(): v for k, v in student.items()}
-        
-        return student
+        response = supabase.table('students').select('*').eq('RNO', rno).execute()
+        if response.data:
+            return response.data[0]
+        return None
     except Exception as e:
-        print(f"Error fetching student {rno}: {e}")
+        print(f"[ERR] Get student: {e}")
         return None
 
 def insert_student(student_data):
-    """Insert new student into MySQL"""
+    """Insert new student into Supabase"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        supabase = get_supabase_client()
+        if supabase is None:
+            return False
         
-        # Convert uppercase keys to lowercase for MySQL
-        mysql_data = {k.lower(): v for k, v in student_data.items()}
-        
-        columns = list(mysql_data.keys())
-        values = list(mysql_data.values())
-        placeholders = ', '.join(['%s'] * len(values))
-        columns_str = ', '.join(columns)
-        
-        query = f"INSERT INTO students ({columns_str}) VALUES ({placeholders})"
-        cursor.execute(query, values)
-        conn.commit()
-        conn.close()
-        return True
+        response = supabase.table('students').insert(student_data).execute()
+        return len(response.data) > 0
     except Exception as e:
-        print(f"Error inserting student: {e}")
+        print(f"[ERR] Insert student: {e}")
         return False
 
-def update_student(rno, student_data):
-    """Update student in MySQL"""
+def update_student(rno, update_data):
+    """Update student in Supabase"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        supabase = get_supabase_client()
+        if supabase is None:
+            return False
         
-        # Convert uppercase keys to lowercase for MySQL
-        mysql_data = {k.lower(): v for k, v in student_data.items()}
-        
-        set_clause = ', '.join([f"{k} = %s" for k in mysql_data.keys()])
-        values = list(mysql_data.values()) + [rno]
-        
-        query = f"UPDATE students SET {set_clause} WHERE rno = %s"
-        cursor.execute(query, values)
-        conn.commit()
-        conn.close()
-        return True
+        response = supabase.table('students').update(update_data).eq('RNO', rno).execute()
+        return len(response.data) > 0
     except Exception as e:
-        print(f"Error updating student {rno}: {e}")
+        print(f"[ERR] Update student: {e}")
         return False
 
 def delete_student(rno):
-    """Delete student from MySQL"""
+    """Delete student from Supabase"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM students WHERE rno = %s", (rno,))
-        conn.commit()
-        conn.close()
-        return True
+        supabase = get_supabase_client()
+        if supabase is None:
+            return False
+        
+        response = supabase.table('students').delete().eq('RNO', rno).execute()
+        return len(response.data) > 0
     except Exception as e:
-        print(f"Error deleting student {rno}: {e}")
+        print(f"[ERR] Delete student: {e}")
         return False
 
-def batch_insert_students(students_df):
-    """Batch insert/update students from DataFrame to MySQL"""
+def batch_insert_students(df):
+    """Batch insert students into Supabase"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        supabase = get_supabase_client()
+        if supabase is None:
+            return False
         
-        for _, row in students_df.iterrows():
-            # Convert row to dict and handle NaN values
-            student_data = row.to_dict()
-            student_data = {k: (None if pd.isna(v) else v) for k, v in student_data.items()}
-            
-            # Use INSERT ... ON DUPLICATE KEY UPDATE
-            columns = list(student_data.keys())
-            values = list(student_data.values())
-            placeholders = ', '.join(['%s'] * len(values))
-            columns_str = ', '.join(columns)
-            
-            # Create update clause for duplicate key
-            update_clause = ', '.join([f"{col} = VALUES({col})" for col in columns if col != 'RNO'])
-            
-            query = f"""
-                INSERT INTO students ({columns_str}) 
-                VALUES ({placeholders})
-                ON DUPLICATE KEY UPDATE {update_clause}
-            """
-            
-            cursor.execute(query, values)
+        # Convert DataFrame to list of dictionaries
+        records = df.to_dict('records')
         
-        conn.commit()
-        conn.close()
+        # Insert in batches of 100
+        batch_size = 100
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            response = supabase.table('students').insert(batch).execute()
+            if not response.data:
+                return False
+        
         return True
     except Exception as e:
-        print(f"Error batch inserting students: {e}")
+        print(f"[ERR] Batch insert: {e}")
         return False
 
 def get_stats():
-    """Get basic statistics from MySQL"""
+    """Get database statistics from Supabase"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        supabase = get_supabase_client()
+        if supabase is None:
+            # Return sample stats
+            return {
+                'total_students': 3,
+                'departments': ['CSE', 'ECE'],
+                'years': [3]
+            }
         
-        # Total students
-        cursor.execute("SELECT COUNT(*) FROM students")
-        total_students = cursor.fetchone()[0]
+        # Get all students
+        response = supabase.table('students').select('DEPT, YEAR').execute()
         
-        # Departments
-        cursor.execute("SELECT DISTINCT dept FROM students WHERE dept IS NOT NULL ORDER BY dept")
-        departments = [row[0] for row in cursor.fetchall()]
+        if not response.data:
+            return {'total_students': 0, 'departments': [], 'years': []}
         
-        # Years
-        cursor.execute("SELECT DISTINCT year FROM students WHERE year IS NOT NULL ORDER BY year")
-        years = [int(row[0]) for row in cursor.fetchall()]
+        df = pd.DataFrame(response.data)
         
-        conn.close()
+        total_students = len(df)
+        departments = sorted(df['DEPT'].dropna().unique().tolist())
+        years = sorted(df['YEAR'].dropna().unique().tolist())
+        
         return {
             'total_students': total_students,
             'departments': departments,
             'years': years
         }
     except Exception as e:
-        print(f"Error getting stats: {e}")
+        print(f"[ERR] Get stats: {e}")
         return {'total_students': 0, 'departments': [], 'years': []}
-
-def test_connection():
-    conn = get_db_connection()
-    if conn:
-        print("Database connection successful!")
-        conn.close()
-        return True
-    else:
-        print("Database connection failed!")
-        return False

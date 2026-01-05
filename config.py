@@ -1,22 +1,19 @@
 import os
+from dotenv import load_dotenv
 
-# Database configuration for deployment
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'database': os.getenv('DB_NAME', 'edumetric_db'),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', 'A$hok3117'),  # Use actual password
-    'port': int(os.getenv('DB_PORT', 3306)),
-    'autocommit': True,
-    'charset': 'utf8mb4'
-}
+# Load environment variables
+load_dotenv()
+
+# Supabase configuration
+SUPABASE_URL = os.getenv('SUPABASE_URL', 'https://jxpsvsxyhfetqbdkszkz.supabase.co')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY', '')
 
 # Flask configuration
-SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here')
-DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+SECRET_KEY = os.getenv('SECRET_KEY', 'edumetric-secret-key-2024-final-year-project-secure')
+DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
 # Email configuration
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
-EMAIL_USER = os.getenv('EMAIL_USER', 'your-email@gmail.com')
-EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD', 'your-app-password')
+EMAIL_USER = os.getenv('EMAIL_USER', 'ashokkumarboya999@gmail.com')
+EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD', '')
