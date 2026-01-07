@@ -1,5 +1,5 @@
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'fallback-key')
@@ -21,11 +21,14 @@ def predict_student(perf, attendance):
 
 @app.route("/")
 def index():
-    return """
-    <h1>🎓 EduMetric Analytics</h1>
-    <p>✅ System Running!</p>
-    <a href="/api/analytics/preview">View Analytics</a>
-    """
+    # Sample data for template
+    departments = ['CSE', 'ECE', 'MECH', 'CIVIL', 'EEE']
+    years = [1, 2, 3, 4]
+    
+    return render_template('index.html', 
+                         DEBUG=False,
+                         departments=departments, 
+                         years=years)
 
 @app.route("/api/analytics/preview")
 def api_analytics_preview():
