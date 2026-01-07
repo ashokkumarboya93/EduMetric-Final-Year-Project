@@ -1,238 +1,174 @@
-import psycopg2
-from supabase import create_client, Client
-import pandas as pd
-from config import SUPABASE_URL, SUPABASE_KEY, DATABASE_URL
 import os
+import requests
+import pandas as pd
+from config import SUPABASE_URL, SUPABASE_KEY
 
-def _apply_rls_policy():
-    """Connect to the database and apply the RLS policy for the students table."""
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        
-        # Get the absolute path to the SQL file
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        sql_file_path = os.path.join(dir_path, 'enable_rls_for_students.sql')
-
-        with open(sql_file_path, 'r') as f:
-            sql = f.read()
-        
-        cur.execute(sql)
-        conn.commit()
-        cur.close()
-        conn.close()
-        print("[INFO] RLS policy for students table applied successfully.")
-    except Exception as e:
-        # It's possible the policy already exists, or the table doesn't, so we can ignore some errors.
-        if "already exists" in str(e) or "does not exist" in str(e):
-            pass
-        else:
-            print(f"[WARN] Could not apply RLS policy: {e}")
-
-# Apply the RLS policy when the module is loaded
-_apply_rls_policy()
-
-def get_supabase_client():
-    """Get Supabase client"""
-    try:
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        return supabase
-    except Exception as e:
-        print(f"[ERR] Supabase connection failed: {e}")
-        return None
-
-
-def test_connection():
-    """Lightweight connectivity check for Supabase (keeps backward compatibility with tests expecting this function)."""
-    try:
-        supabase = get_supabase_client()
-        if supabase is None:
-            return False
-
-        # Try a lightweight request to verify connectivity
-        try:
-            resp = supabase.table('students').select('rno').limit(1).execute()
-            return True if resp is not None else False
-        except Exception as e:
-            print(f"Error connecting to Supabase: {e}")
-            return False
-    except Exception as e:
-        print(f"[ERR] test_connection: {e}")
-        return False
+def get_supabase_headers():
+    """Get headers for Supabase API requests"""
+    return {
+        'apikey': SUPABASE_KEY,
+        'Authorization': f'Bearer {SUPABASE_KEY}',
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+    }
 
 def load_students_df():
-    """Load all students from Supabase"""
+    """Load all students from Supabase via REST API"""
     try:
-        supabase = get_supabase_client()
-        if supabase is None:
-            return pd.DataFrame()
+        url = f"{SUPABASE_URL}/rest/v1/students?select=*"
+        headers = get_supabase_headers()
         
-        response = supabase.table('students').select('*').execute()
-        if response.data:
-            df = pd.DataFrame(response.data)
-            # Convert column names to uppercase to match app expectations
-            df.columns = df.columns.str.upper()
-            return df
-        return pd.DataFrame()
+        response = requests.get(url, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                # Convert column names to uppercase for consistency
+                df.columns = df.columns.str.upper()
+                return df
+            else:
+                print("[WARN] No data returned from Supabase")
+                return pd.DataFrame()
+        else:
+            print(f"[ERR] Supabase API error: {response.status_code} - {response.text}")
+            return pd.DataFrame()
+            
     except Exception as e:
-        print(f"[ERR] Load students: {e}")
+        print(f"[ERR] Failed to load students: {e}")
         return pd.DataFrame()
 
 def get_student_by_rno(rno):
-    """Get student by roll number from Supabase"""
+    """Get a single student by register number"""
     try:
-        supabase = get_supabase_client()
-        if supabase is None:
-            return None
+        url = f"{SUPABASE_URL}/rest/v1/students?rno=eq.{rno}&select=*"
+        headers = get_supabase_headers()
         
-        response = supabase.table('students').select('*').eq('rno', rno).execute()
-        if response.data:
-            student = response.data[0]
-            # Convert keys to uppercase to match app expectations
-            return {k.upper(): v for k, v in student.items()}
+        response = requests.get(url, headers=headers, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                student = data[0]
+                # Convert keys to uppercase
+                return {k.upper(): v for k, v in student.items()}
+        
         return None
+        
     except Exception as e:
-        print(f"[ERR] Get student: {e}")
+        print(f"[ERR] Failed to get student {rno}: {e}")
         return None
 
 def insert_student(student_data):
-    """Insert new student into Supabase"""
+    """Insert a new student record"""
     try:
-        supabase = get_supabase_client()
-        if supabase is None:
-            return False
+        url = f"{SUPABASE_URL}/rest/v1/students"
+        headers = get_supabase_headers()
         
-        # Convert uppercase keys to lowercase for Supabase
-        lowercase_data = {k.lower(): v for k, v in student_data.items()}
-        response = supabase.table('students').insert(lowercase_data).execute()
-        return len(response.data) > 0
+        # Convert keys to lowercase for Supabase
+        payload = {k.lower(): v for k, v in student_data.items()}
+        
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        
+        return response.status_code in [200, 201]
+        
     except Exception as e:
-        print(f"[ERR] Insert student: {e}")
+        print(f"[ERR] Failed to insert student: {e}")
         return False
 
-def update_student(rno, update_data):
-    """Update student in Supabase"""
+def update_student(rno, student_data):
+    """Update an existing student record"""
     try:
-        supabase = get_supabase_client()
-        if supabase is None:
-            return False
+        url = f"{SUPABASE_URL}/rest/v1/students?rno=eq.{rno}"
+        headers = get_supabase_headers()
         
-        # Convert uppercase keys to lowercase for Supabase
-        lowercase_data = {k.lower(): v for k, v in update_data.items()}
-        response = supabase.table('students').update(lowercase_data).eq('rno', rno).execute()
-        return len(response.data) > 0
+        # Convert keys to lowercase for Supabase
+        payload = {k.lower(): v for k, v in student_data.items()}
+        
+        response = requests.patch(url, headers=headers, json=payload, timeout=15)
+        
+        return response.status_code == 200
+        
     except Exception as e:
-        print(f"[ERR] Update student: {e}")
+        print(f"[ERR] Failed to update student {rno}: {e}")
         return False
 
 def delete_student(rno):
-    """Delete student from Supabase"""
+    """Delete a student record"""
     try:
-        supabase = get_supabase_client()
-        if supabase is None:
-            return False
+        url = f"{SUPABASE_URL}/rest/v1/students?rno=eq.{rno}"
+        headers = get_supabase_headers()
         
-        response = supabase.table('students').delete().eq('rno', rno).execute()
-        return len(response.data) > 0
+        response = requests.delete(url, headers=headers, timeout=15)
+        
+        return response.status_code == 200
+        
     except Exception as e:
-        print(f"[ERR] Delete student: {e}")
-        return False
-
-def batch_insert_students(df):
-    """Batch insert students into Supabase"""
-    try:
-        supabase = get_supabase_client()
-        if supabase is None:
-            return False
-        
-        # Convert DataFrame to list of dictionaries with lowercase keys
-        records = df.to_dict('records')
-        lowercase_records = [{k.lower(): v for k, v in record.items()} for record in records]
-        
-        # Insert in batches of 100
-        batch_size = 100
-        for i in range(0, len(lowercase_records), batch_size):
-            batch = lowercase_records[i:i + batch_size]
-            response = supabase.table('students').insert(batch).execute()
-            if not response.data:
-                return False
-        
-        return True
-    except Exception as e:
-        print(f"[ERR] Batch insert: {e}")
+        print(f"[ERR] Failed to delete student {rno}: {e}")
         return False
 
 def get_stats():
-    """Get database statistics from Supabase"""
+    """Get basic statistics about the data"""
     try:
-        supabase = get_supabase_client()
-        if supabase is None:
-            return {'total_students': 0, 'departments': [], 'years': [], 'sample_rnos': []}
+        df = load_students_df()
         
-        # Get all students
-        response = supabase.table('students').select('dept, year, rno').execute()
+        if df.empty:
+            return {
+                'total_students': 0,
+                'departments': [],
+                'years': [],
+                'sample_rnos': []
+            }
         
-        if not response.data:
-            return {'total_students': 0, 'departments': [], 'years': [], 'sample_rnos': []}
-        
-        df = pd.DataFrame(response.data)
-        
-        total_students = len(df)
-        departments = sorted(df['dept'].dropna().unique().tolist())
-        years = sorted(df['year'].dropna().unique().tolist())
-        sample_rnos = df['rno'].head(10).tolist()
+        # Get unique departments and years
+        departments = sorted(df['DEPT'].dropna().unique().tolist())
+        years = sorted([int(y) for y in df['YEAR'].dropna().unique() if str(y).isdigit()])
+        sample_rnos = df['RNO'].head(5).tolist()
         
         return {
-            'total_students': total_students,
+            'total_students': len(df),
             'departments': departments,
             'years': years,
             'sample_rnos': sample_rnos
         }
-    except Exception as e:
-        print(f"[ERR] Get stats: {e}")
-        return {'total_students': 0, 'departments': [], 'years': [], 'sample_rnos': []}
-
-
-def get_all_students():
-    """Get all students from Supabase (alias for load_students_df)"""
-    try:
-        supabase = get_supabase_client()
-        if supabase is None:
-            return []
         
-        response = supabase.table('students').select('*').execute()
-        if response.data:
-            return response.data
-        return []
     except Exception as e:
-        print(f"[ERR] Get all students: {e}")
-        return []
+        print(f"[ERR] Failed to get stats: {e}")
+        return {
+            'total_students': 0,
+            'departments': [],
+            'years': [],
+            'sample_rnos': []
+        }
 
-def search_student(rno):
-    """Search student by RNO (alias for get_student_by_rno)"""
-    student = get_student_by_rno(rno)
-    if student:
-        # Ensure uppercase keys
-        return {k.upper(): v for k, v in student.items()}
-    return None
+def test_connection():
+    """Test the Supabase connection"""
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/students?select=count&limit=1"
+        headers = get_supabase_headers()
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        return response.status_code == 200
+        
+    except Exception as e:
+        print(f"[ERR] Connection test failed: {e}")
+        return False
 
 def raw_rest_check(limit=1):
-    """Direct HTTP check against Supabase REST endpoint for `students` table."""
+    """Raw REST API check for diagnostics"""
     try:
-        import requests
-        from config import SUPABASE_URL, SUPABASE_KEY
-
-        url = SUPABASE_URL.rstrip('/') + f"/rest/v1/students?select=*&limit={limit}"
-        headers = {
-            'apikey': SUPABASE_KEY,
-            'Authorization': f'Bearer {SUPABASE_KEY}',
-            'Accept': 'application/json'
+        url = f"{SUPABASE_URL}/rest/v1/students?select=*&limit={limit}"
+        headers = get_supabase_headers()
+        
+        response = requests.get(url, headers=headers, timeout=15)
+        
+        return {
+            'status_code': response.status_code,
+            'ok': response.ok,
+            'text': response.text[:500],
+            'headers': dict(response.headers)
         }
-        resp = requests.get(url, headers=headers, timeout=10)
-        try:
-            body = resp.json()
-        except Exception:
-            body = resp.text
-        return {'status_code': resp.status_code, 'body': body, 'url': url}
+        
     except Exception as e:
         return {'error': str(e)}
