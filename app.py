@@ -24,16 +24,23 @@ def get_supabase_data():
             'Accept': 'application/json'
         }
         
+        print(f"Fetching data from: {url}")
         response = requests.get(url, headers=headers, timeout=10)
+        print(f"Response status: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
+            print(f"Found {len(data)} records")
             if data:
                 df = pd.DataFrame(data)
                 df.columns = df.columns.str.upper()
+                print(f"DataFrame shape: {df.shape}")
+                print(f"Columns: {list(df.columns)[:10]}...")  # Show first 10 columns
                 return df
+        else:
+            print(f"Error response: {response.text[:200]}")
         
-        print(f"Supabase error: {response.status_code}")
+        print("Returning empty DataFrame")
         return pd.DataFrame()
         
     except Exception as e:
@@ -242,30 +249,42 @@ def api_dept():
         dept = data.get("dept", None)
         year = data.get("year", None)
 
+        print(f"Department analysis request: dept={dept}, year={year}")
+        
         df = get_supabase_data()
+        print(f"Loaded {len(df)} total records")
         
         if df.empty:
             return jsonify({"success": False, "message": "No data available"}), 400
         
         # Filter by department
         if dept and dept != "":
-            df = df[df["DEPT"].astype(str).str.strip() == str(dept).strip()]
+            print(f"Filtering by department: {dept}")
+            df = df[df["DEPT"].astype(str).str.strip().str.upper() == str(dept).strip().upper()]
+            print(f"After dept filter: {len(df)} records")
 
         # Filter by year
         if year not in (None, "", "all"):
             try:
                 year_int = int(year)
-                df = df[df["YEAR"].fillna(0).astype(int) == year_int]
-            except Exception:
+                print(f"Filtering by year: {year_int}")
+                df = df[df["YEAR"].fillna(0).astype(str).astype(int) == year_int]
+                print(f"After year filter: {len(df)} records")
+            except Exception as e:
+                print(f"Year filter error: {e}")
                 return jsonify({"success": False, "message": "Invalid year filter"}), 400
 
         if df.empty:
             return jsonify({"success": False, "message": "No students found for the selected criteria"}), 400
 
+        print("Starting analysis...")
         res = analyze_subset(df)
+        print("Analysis completed successfully")
         return jsonify({"success": True, **res})
     except Exception as e:
         print(f"Department analysis error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"success": False, "message": f"Analysis failed: {str(e)}"}), 500
 
 @app.route("/api/year/analyze", methods=["POST"])
