@@ -78,8 +78,10 @@ window.addEventListener("DOMContentLoaded", () => {
     const landingPage = document.getElementById('landing-page');
     const appShell = document.getElementById('app-shell');
     
-    if (landingPage) landingPage.style.display = 'block';
-    if (appShell) appShell.style.display = 'none';
+    // Show landing by default; if running in development/debug, auto-open dashboard
+    const isDebug = (window.EDUMETRIC_DEBUG === true || window.EDUMETRIC_DEBUG === 'true');
+    if (landingPage) landingPage.style.display = isDebug ? 'none' : 'block';
+    if (appShell) appShell.style.display = isDebug ? 'block' : 'none';
     
     // Set initial header text for dashboard
     const totalStatsEl = document.getElementById("total-stats");
@@ -210,12 +212,25 @@ async function loadInitialStats() {
             ];
             deptSelects.forEach(sel => {
                 if (sel) {
-                    sel.innerHTML = "";
+                    // Keep existing options and add new ones
+                    const existingOptions = Array.from(sel.options).map(opt => opt.value);
                     stats.departments.forEach(d => {
-                        const opt = document.createElement("option");
-                        opt.value = d;
-                        opt.textContent = d;
-                        sel.appendChild(opt);
+                        if (!existingOptions.includes(d)) {
+                            const opt = document.createElement("option");
+                            opt.value = d;
+                            // Format department names properly
+                            let displayName = d;
+                            if (d === 'cse') displayName = 'Computer Science & Engineering';
+                            else if (d === 'cse(ai)') displayName = 'CSE (Artificial Intelligence)';
+                            else if (d === 'ece') displayName = 'Electronics & Communication';
+                            else if (d === 'eee') displayName = 'Electrical & Electronics';
+                            else if (d === 'mech') displayName = 'Mechanical Engineering';
+                            else if (d === 'civil') displayName = 'Civil Engineering';
+                            else if (d === 'cds') displayName = 'Computer & Data Science';
+                            else displayName = d.toUpperCase();
+                            opt.textContent = displayName;
+                            sel.appendChild(opt);
+                        }
                     });
                 }
             });
@@ -229,12 +244,20 @@ async function loadInitialStats() {
             ];
             yearSelects.forEach(sel => {
                 if (sel) {
-                    sel.innerHTML = "";
+                    // Keep existing options and add new ones
+                    const existingOptions = Array.from(sel.options).map(opt => opt.value);
                     stats.years.forEach(y => {
-                        const opt = document.createElement("option");
-                        opt.value = y;
-                        opt.textContent = y;
-                        sel.appendChild(opt);
+                        if (!existingOptions.includes(y.toString())) {
+                            const opt = document.createElement("option");
+                            opt.value = y;
+                            // Format year display properly
+                            let yearSuffix = 'st';
+                            if (y === 2) yearSuffix = 'nd';
+                            else if (y === 3) yearSuffix = 'rd';
+                            else if (y === 4) yearSuffix = 'th';
+                            opt.textContent = `${y}${yearSuffix} Year`;
+                            sel.appendChild(opt);
+                        }
                     });
                 }
             });
@@ -243,11 +266,20 @@ async function loadInitialStats() {
         if (stats.years) {
             const dYear = document.getElementById("d-year");
             if (dYear) {
+                // Keep existing "All Years" option
+                const existingOptions = Array.from(dYear.options).map(opt => opt.value);
                 stats.years.forEach(y => {
-                    const opt = document.createElement("option");
-                    opt.value = y;
-                    opt.textContent = `Year ${y}`;
-                    dYear.appendChild(opt);
+                    if (!existingOptions.includes(y.toString())) {
+                        const opt = document.createElement("option");
+                        opt.value = y;
+                        // Format year display properly
+                        let yearSuffix = 'st';
+                        if (y === 2) yearSuffix = 'nd';
+                        else if (y === 3) yearSuffix = 'rd';
+                        else if (y === 4) yearSuffix = 'th';
+                        opt.textContent = `${y}${yearSuffix} Year`;
+                        dYear.appendChild(opt);
+                    }
                 });
             }
         }

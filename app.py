@@ -2,14 +2,16 @@ import os
 import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, request, render_template, send_file
+import requests
 import joblib
 import io
 import smtplib
 from email.mime.text import MIMEText
-from db import (
+from supabase_db import (
     load_students_df, get_student_by_rno, insert_student, 
-    update_student, delete_student, batch_insert_students, get_stats
+    get_stats, create_students_table, test_connection
 )
+from db import update_student
 from config import SECRET_KEY, DEBUG, EMAIL_USER, EMAIL_PASSWORD
 
 try:
@@ -329,9 +331,19 @@ def analyze_subset(df):
     }
 
 # API Routes
+@app.route("/favicon.ico")
+def favicon():
+    return "", 204  # No Content
+
 @app.route("/")
 def index():
-    return render_template("index.html")
+    stats = get_stats()
+    return render_template(
+        "index.html", 
+        DEBUG=app.config.get('DEBUG', False),
+        departments=stats.get('departments', []),
+        years=stats.get('years', [])
+    )
 
 
 
@@ -344,6 +356,56 @@ def api_stats():
         print(f"[ERR] Stats API error: {e}")
         return jsonify({"total_students": 0, "departments": [], "years": []}), 500
 
+
+@app.route("/api/test-connection")
+def api_test_connection():
+    try:
+        ok = test_connection()
+        return jsonify({"success": ok})
+    except Exception as e:
+        print(f"[ERR] Test connection API: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/diag/supabase')
+def api_diag_supabase():
+    """Diagnostics: call Supabase REST directly and return raw response."""
+    try:
+        from config import SUPABASE_URL, SUPABASE_KEY
+        url = SUPABASE_URL.rstrip('/') + '/rest/v1/students?select=*&limit=1'
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+            'Accept': 'application/json'
+        }
+        resp = requests.get(url, headers=headers, timeout=15)
+        text = resp.text
+        try:
+            data = resp.json()
+        except Exception:
+            data = None
+        return jsonify({
+            'status_code': resp.status_code,
+            'ok': resp.ok,
+            'text': text[:1000],
+            'json': data
+        }), 200
+    except Exception as e:
+        print(f"[ERR] diag supabase: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route("/api/raw-students")
+def api_raw_students():
+    """Diagnostic: call Supabase REST directly and return status/body."""
+    try:
+        from db import raw_rest_check
+        res = raw_rest_check(limit=1)
+        return jsonify({'success': True, 'result': res})
+    except Exception as e:
+        print(f"[ERR] raw-students: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route("/api/student/search", methods=["POST"])
 def api_student_search():
     data = request.get_json(silent=True) or {}
@@ -354,13 +416,13 @@ def api_student_search():
             {"success": False, "message": "Please provide Register Number."}
         ), 400
 
-    # Search student in MySQL
+    # Search student in Supabase
     student = get_student_by_rno(rno)
     
     if not student:
-        return jsonify({"success": False, "message": "Student not found."}), 200
+        return jsonify({"success": False, "message": "Student not found."}), 404
 
-    # Convert to proper format
+    # Return student data with proper field mapping from uppercase to uppercase (already converted in db.py)
     student_data = {
         "NAME": student.get("NAME", ""),
         "RNO": student.get("RNO", ""),
@@ -370,19 +432,19 @@ def api_student_search():
         "CURR_SEM": safe_int(student.get("CURR_SEM", 0)),
         "MENTOR": student.get("MENTOR", ""),
         "MENTOR_EMAIL": student.get("MENTOR_EMAIL", ""),
-        "SEM1": student.get("SEM1", 0.0) or 0.0,
-        "SEM2": student.get("SEM2", 0.0) or 0.0,
-        "SEM3": student.get("SEM3", 0.0) or 0.0,
-        "SEM4": student.get("SEM4", 0.0) or 0.0,
-        "SEM5": student.get("SEM5", 0.0) or 0.0,
-        "SEM6": student.get("SEM6", 0.0) or 0.0,
-        "SEM7": student.get("SEM7", 0.0) or 0.0,
-        "SEM8": student.get("SEM8", 0.0) or 0.0,
-        "INTERNAL_MARKS": student.get("INTERNAL_MARKS", 0.0) or 0.0,
-        "TOTAL_DAYS_CURR": student.get("TOTAL_DAYS_CURR", 0.0) or 0.0,
-        "ATTENDED_DAYS_CURR": student.get("ATTENDED_DAYS_CURR", 0.0) or 0.0,
-        "PREV_ATTENDANCE_PERC": student.get("PREV_ATTENDANCE_PERC", 0.0) or 0.0,
-        "BEHAVIOR_SCORE_10": student.get("BEHAVIOR_SCORE_10", 0.0) or 0.0
+        "SEM1": float(student.get("SEM1", 0) or 0),
+        "SEM2": float(student.get("SEM2", 0) or 0),
+        "SEM3": float(student.get("SEM3", 0) or 0),
+        "SEM4": float(student.get("SEM4", 0) or 0),
+        "SEM5": float(student.get("SEM5", 0) or 0),
+        "SEM6": float(student.get("SEM6", 0) or 0),
+        "SEM7": float(student.get("SEM7", 0) or 0),
+        "SEM8": float(student.get("SEM8", 0) or 0),
+        "INTERNAL_MARKS": float(student.get("INTERNAL_MARKS", 20) or 20),
+        "TOTAL_DAYS_CURR": float(student.get("TOTAL_DAYS_CURR", 90) or 90),
+        "ATTENDED_DAYS_CURR": float(student.get("ATTENDED_DAYS_CURR", 80) or 80),
+        "PREV_ATTENDANCE_PERC": float(student.get("PREV_ATTENDANCE_PERC", 85) or 85),
+        "BEHAVIOR_SCORE_10": float(student.get("BEHAVIOR_SCORE_10", 7) or 7)
     }
     
     return jsonify({"success": True, "student": to_py(student_data)})
@@ -496,8 +558,6 @@ def api_college():
     except Exception as e:
         print(f"[ERR] College analysis: {e}")
         return jsonify({"success": False, "message": f"Analysis failed: {str(e)}"}), 500
-
-
 
 
 
@@ -1997,7 +2057,6 @@ def generate_student_recommendations(features, predictions):
     # Performance-based recommendations
     perf_score = features.get('performance_overall', 0)
     perf_label = predictions.get('performance_label', 'unknown')
-    
     if perf_score < 40:
         recommendations.append("🚨 CRITICAL: Immediate academic intervention required - schedule emergency counseling within 24 hours")
         recommendations.append("📚 Enroll in intensive remedial program with daily tutoring sessions")
@@ -2101,7 +2160,7 @@ def api_chat():
             return jsonify({"success": False, "message": "Please provide a message"}), 400
         
         if len(user_message) > 500:
-            return jsonify({"success": False, "message": "Message too long. Please keep it under 500 characters."}), 400
+            return jsonify({"success": False, "message": "Message too long. Please keep it under 500 characters."}, 400)
         
         print(f"[DEBUG] Processing chat message: {user_message}")
         
@@ -2149,3 +2208,11 @@ def api_chat():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+@app.route("/test-db")
+def test_db_connection():
+    from supabase_db import test_connection
+    if test_connection():
+        return "Supabase connection successful!"
+    else:
+        return "Supabase connection failed. Check your .env file and credentials.", 500

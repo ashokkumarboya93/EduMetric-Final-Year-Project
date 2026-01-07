@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>Intelligent Student Performance Analytics</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAQAABILAAASCwAAAAAAAAAAAAD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///wAAAAA">
 
     <!-- Styles -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -20,6 +21,10 @@
     <!-- App JS -->
     <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/fix.js') }}"></script>
+    <script>
+        // Enable client-side dev mode when server DEBUG is true
+        window.EDUMETRIC_DEBUG = {{ 'true' if DEBUG else 'false' }};
+    </script>
 </head>
 <body>
 
@@ -459,11 +464,21 @@
                         </div>
                         <div class="form-group">
                             <label>Department</label>
-                            <select id="s-dept"></select>
+                            <select id="s-dept">
+                                <option value="">All Departments</option>
+                                {% for dept in departments %}
+                                <option value="{{ dept }}">{{ dept }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                         <div class="form-group">
                             <label>Year</label>
-                            <select id="s-year"></select>
+                            <select id="s-year">
+                                <option value="">All Years</option>
+                                {% for year in years %}
+                                <option value="{{ year }}">{{ year }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                     </div>
                     <button class="primary-btn" onclick="searchExistingStudent()">
@@ -485,14 +500,24 @@
                         </div>
                         <div class="form-group">
                             <label>Department</label>
-                            <select id="n-dept"></select>
+                            <select id="n-dept">
+                                <option value="">Select Department</option>
+                                {% for dept in departments %}
+                                <option value="{{ dept }}">{{ dept }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
                             <label>Year</label>
-                            <select id="n-year"></select>
+                            <select id="n-year">
+                                <option value="">Select Year</option>
+                                {% for year in years %}
+                                <option value="{{ year }}">{{ year }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                         <div class="form-group">
                             <label>Current Semester (1-8)</label>
@@ -607,12 +632,20 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label>Department</label>
-                            <select id="d-dept"></select>
+                            <select id="d-dept">
+                                <option value="">Select Department</option>
+                                {% for dept in departments %}
+                                <option value="{{ dept }}">{{ dept }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                         <div class="form-group">
                             <label>Year Filter</label>
                             <select id="d-year">
                                 <option value="all">All Years</option>
+                                {% for year in years %}
+                                <option value="{{ year }}">{{ year }}</option>
+                                {% endfor %}
                             </select>
                         </div>
                     </div>
@@ -674,7 +707,12 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label>Year</label>
-                            <select id="y-year"></select>
+                            <select id="y-year">
+                                <option value="">Select Year</option>
+                                {% for year in years %}
+                                <option value="{{ year }}">{{ year }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                     </div>
                     <button class="primary-btn" onclick="analyseYear()">
@@ -925,11 +963,9 @@
                                 <label>Department *</label>
                                 <select id="create-dept" required>
                                     <option value="">Select Department</option>
-                                    <option value="CSE">CSE</option>
-                                    <option value="ECE">ECE</option>
-                                    <option value="MECH">MECH</option>
-                                    <option value="CIVIL">CIVIL</option>
-                                    <option value="EEE">EEE</option>
+                                    {% for dept in departments %}
+                                    <option value="{{ dept }}">{{ dept }}</option>
+                                    {% endfor %}
                                     <option value="CSE(AI)">CSE(AI)</option>
                                     <option value="CDS">CDS</option>
                                     <option value="IT">IT</option>
@@ -939,10 +975,9 @@
                                 <label>Year *</label>
                                 <select id="create-year" required>
                                     <option value="">Select Year</option>
-                                    <option value="1">1st Year</option>
-                                    <option value="2">2nd Year</option>
-                                    <option value="3">3rd Year</option>
-                                    <option value="4">4th Year</option>
+                                    {% for year in years %}
+                                    <option value="{{ year }}">{{ year }} Year</option>
+                                    {% endfor %}
                                 </select>
                             </div>
                             <div class="form-group">
@@ -1078,11 +1113,9 @@
                                 <div class="form-group">
                                     <label>Department</label>
                                     <select id="update-dept">
-                                        <option value="CSE">CSE</option>
-                                        <option value="ECE">ECE</option>
-                                        <option value="MECH">MECH</option>
-                                        <option value="CIVIL">CIVIL</option>
-                                        <option value="EEE">EEE</option>
+                                        {% for dept in departments %}
+                                        <option value="{{ dept }}">{{ dept }}</option>
+                                        {% endfor %}
                                         <option value="CSE(AI)">CSE(AI)</option>
                                         <option value="CDS">CDS</option>
                                         <option value="IT">IT</option>
@@ -1093,10 +1126,9 @@
                                 <div class="form-group">
                                     <label>Year</label>
                                     <select id="update-year">
-                                        <option value="1">1st Year</option>
-                                        <option value="2">2nd Year</option>
-                                        <option value="3">3rd Year</option>
-                                        <option value="4">4th Year</option>
+                                        {% for year in years %}
+                                        <option value="{{ year }}">{{ year }} Year</option>
+                                        {% endfor %}
                                     </select>
                                 </div>
                                 <div class="form-group">

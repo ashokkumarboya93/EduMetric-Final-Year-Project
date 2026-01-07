@@ -1,111 +1,57 @@
-# EduMetric Deployment Guide - PythonAnywhere
+# EduMetric Vercel Deployment Guide
 
 ## Prerequisites
-1. PythonAnywhere account (free or paid)
-2. MySQL database on PythonAnywhere
+1. GitHub account
+2. Vercel account (free)
+3. Your Supabase credentials
 
-## Step 1: Upload Code
-1. Go to PythonAnywhere Dashboard
-2. Open a Bash console
-3. Clone your repository:
-   ```bash
-   git clone https://github.com/ashokkumarboya93/EduMetric-Final-Year-Project.git
-   cd EduMetric-Final-Year-Project
-   ```
+## Deployment Steps
 
-## Step 2: Set up Virtual Environment
+### 1. Push to GitHub
 ```bash
-mkvirtualenv --python=/usr/bin/python3.10 edumetric
-pip install -r requirements.txt
+git init
+git add .
+git commit -m "Initial commit - EduMetric app"
+git branch -M main
+git remote add origin https://github.com/yourusername/edumetric.git
+git push -u origin main
 ```
 
-## Step 3: Set up MySQL Database
-1. Go to PythonAnywhere Dashboard > Databases
-2. Create a new MySQL database: `yourusername$edumetric`
-3. Note your database details:
-   - Host: `yourusername.mysql.pythonanywhere-services.com`
-   - Database: `yourusername$edumetric`
-   - Username: `yourusername`
-   - Password: [your password]
+### 2. Deploy on Vercel
+1. Go to https://vercel.com
+2. Sign in with GitHub
+3. Click "New Project"
+4. Import your GitHub repository
+5. Configure environment variables:
 
-## Step 4: Import Your Data
-1. Export your local MySQL data:
-   ```bash
-   mysqldump -u root -p edumetric_db > edumetric_backup.sql
-   ```
-2. Upload the SQL file to PythonAnywhere
-3. Import to PythonAnywhere MySQL:
-   ```bash
-   mysql -u yourusername -p -h yourusername.mysql.pythonanywhere-services.com yourusername$edumetric < edumetric_backup.sql
-   ```
-
-## Step 5: Configure Environment Variables
-Create a `.env` file in your project directory:
+### 3. Environment Variables (Add in Vercel Dashboard)
 ```
-DB_HOST=yourusername.mysql.pythonanywhere-services.com
-DB_NAME=yourusername$edumetric
-DB_USER=yourusername
-DB_PASSWORD=your_mysql_password
-DB_PORT=3306
-SECRET_KEY=your-secret-key-here
-DEBUG=False
-EMAIL_USER=your_email@gmail.com
-EMAIL_PASSWORD=your_app_password
+SUPABASE_URL = https://jxpsvsxyhfetqbdkszkz.supabase.co
+SUPABASE_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp4cHN2c3h5aGZldHFiZGtzemt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2ODgwODMsImV4cCI6MjA4MDI2NDA4M30.7LOJ9XDUaxR6mFGpsWjnLk8TZmEsmDWrddcu-kVc3hM
+SECRET_KEY = edumetric-secret-key-2024-final-year-project-secure
+DEBUG = False
+EMAIL_USER = ashokkumarboya999@gmail.com
+EMAIL_PASSWORD = ashok123@
 ```
 
-## Step 6: Set up Web App
-1. Go to PythonAnywhere Dashboard > Web
-2. Create a new web app
-3. Choose "Manual configuration" with Python 3.10
-4. Set the source code directory: `/home/yourusername/EduMetric-Final-Year-Project`
-5. Set the WSGI configuration file: `/home/yourusername/EduMetric-Final-Year-Project/wsgi.py`
-6. Set the virtualenv: `/home/yourusername/.virtualenvs/edumetric`
+### 4. Deploy
+- Click "Deploy"
+- Wait for build to complete
+- Your app will be live at: https://your-project-name.vercel.app
 
-## Step 7: Configure Static Files
-In the Web tab, add static files mapping:
-- URL: `/static/`
-- Directory: `/home/yourusername/EduMetric-Final-Year-Project/static/`
+## Files Created for Deployment
+- `vercel.json` - Vercel configuration
+- `requirements.txt` - Python dependencies
+- `api/index.py` - Vercel entry point
 
-## Step 8: Update WSGI File
-Edit `/home/yourusername/EduMetric-Final-Year-Project/wsgi.py`:
-```python
-#!/usr/bin/python3.10
+## Features Preserved
+✅ Student analytics and predictions
+✅ Supabase database integration
+✅ Department/Year analytics
+✅ Email alerts
+✅ All existing functionality
 
-import sys
-import os
-
-# Add your project directory to sys.path
-project_home = '/home/yourusername/EduMetric-Final-Year-Project'
-if project_home not in sys.path:
-    sys.path = [project_home] + sys.path
-
-# Load environment variables
-from dotenv import load_dotenv
-load_dotenv(os.path.join(project_home, '.env'))
-
-from app import app as application
-
-if __name__ == "__main__":
-    application.run()
-```
-
-## Step 9: Test and Deploy
-1. Click "Reload" on the Web tab
-2. Visit your app at: `https://yourusername.pythonanywhere.com`
-
-## Troubleshooting
-- Check error logs in PythonAnywhere Dashboard > Web > Log files
-- Test database connection in a console:
-  ```python
-  from db import test_connection
-  test_connection()
-  ```
-
-## Environment Variables for Production
-Set these in your `.env` file:
-- `DB_HOST`: Your PythonAnywhere MySQL host
-- `DB_NAME`: Your database name
-- `DB_USER`: Your PythonAnywhere username
-- `DB_PASSWORD`: Your MySQL password
-- `SECRET_KEY`: A secure random key
-- `DEBUG`: Set to `False` for production
+## Post-Deployment
+1. Test all features on live URL
+2. Update any hardcoded localhost URLs
+3. Monitor Vercel logs for any issues
