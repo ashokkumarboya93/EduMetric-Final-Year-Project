@@ -135,87 +135,42 @@ def compute_features(student_row):
         "prev_att": round(prev_att, 2),
     }
 
-# Model Prediction
+# Rule-based Prediction (Railway-compatible)
 def predict_student(f):
-    if not all(
-        [
-            performance_model,
-            performance_encoder,
-            risk_model,
-            risk_encoder,
-            dropout_model,
-            dropout_encoder,
-        ]
-    ):
-        print("[WARN] One or more models not loaded, using fallback predictions")
-        # Return reasonable fallback predictions based on performance score
-        perf_score = f.get("performance_overall", 50)
-        if perf_score >= 75:
-            return {
-                "performance_label": "high",
-                "risk_label": "low",
-                "dropout_label": "low",
-            }
-        elif perf_score >= 60:
-            return {
-                "performance_label": "medium",
-                "risk_label": "medium",
-                "dropout_label": "medium",
-            }
-        else:
-            return {
-                "performance_label": "low",
-                "risk_label": "high",
-                "dropout_label": "high",
-            }
-
-    try:
-        X = np.array(
-            [
-                f["past_avg"],
-                f["past_count"],
-                f["internal_pct"],
-                f["attendance_pct"],
-                f["behavior_pct"],
-                f["performance_trend"],
-            ]
-        ).reshape(1, -1)
-
-        perf_raw = performance_model.predict(X)[0] # type: ignore
-        risk_raw = risk_model.predict(X)[0] # type: ignore
-        drop_raw = dropout_model.predict(X)[0] # type: ignore
-
-        perf = performance_encoder.inverse_transform([perf_raw])[0] # type: ignore
-        risk = risk_encoder.inverse_transform([risk_raw])[0] # type: ignore
-        drop = dropout_encoder.inverse_transform([drop_raw])[0] # type: ignore
-
-        return {
-            "performance_label": str(perf),
-            "risk_label": str(risk),
-            "dropout_label": str(drop),
-        }
-    except Exception as e:
-        print(f"[WARN] Model prediction failed: {e}")
-        # Fallback based on performance score
-        perf_score = f.get("performance_overall", 50)
-        if perf_score >= 75:
-            return {
-                "performance_label": "high",
-                "risk_label": "low",
-                "dropout_label": "low",
-            }
-        elif perf_score >= 60:
-            return {
-                "performance_label": "medium",
-                "risk_label": "medium",
-                "dropout_label": "medium",
-            }
-        else:
-            return {
-                "performance_label": "low",
-                "risk_label": "high",
-                "dropout_label": "high",
-            }
+    # Always use rule-based predictions for Railway deployment reliability
+    perf_score = f.get("performance_overall", 50)
+    risk_score = f.get("risk_score", 50)
+    attendance = f.get("attendance_pct", 75)
+    
+    # Performance prediction
+    if perf_score >= 80:
+        perf_label = "high"
+    elif perf_score >= 60:
+        perf_label = "medium"
+    else:
+        perf_label = "low"
+    
+    # Risk prediction
+    if risk_score >= 70 or attendance < 60:
+        risk_label = "high"
+    elif risk_score >= 40 or attendance < 75:
+        risk_label = "medium"
+    else:
+        risk_label = "low"
+    
+    # Dropout prediction
+    if attendance < 50 or perf_score < 40:
+        drop_label = "high"
+    elif attendance < 70 or perf_score < 60:
+        drop_label = "medium"
+    else:
+        drop_label = "low"
+    
+    return {
+        "performance_label": perf_label,
+        "risk_label": risk_label,
+        "dropout_label": drop_label,
+    }
 
 def load_ds3_data():
     return load_students_df()
