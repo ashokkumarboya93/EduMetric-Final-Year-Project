@@ -217,20 +217,20 @@ def analyze_subset(df):
             if not st.get('RNO') or not st.get('NAME'):
                 continue
             
-            # Check if predictions already exist in MySQL data
+            # Check if predictions already exist in data
             if ('performance_label' in st and 'risk_label' in st and 'dropout_label' in st and
                 st.get('performance_label') not in [None, '', 'nan', 'unknown'] and
                 st.get('risk_label') not in [None, '', 'nan', 'unknown'] and
                 st.get('dropout_label') not in [None, '', 'nan', 'unknown']):
-                # Use existing predictions from MySQL
-                perf_label = str(st.get('performance_label', 'unknown')).lower()
-                risk_label = str(st.get('risk_label', 'unknown')).lower()
-                drop_label = str(st.get('dropout_label', 'unknown')).lower()
-                perf_score = float(st.get('performance_overall', 0.0) or 0.0)
-                risk_score = float(st.get('risk_score', 0.0) or 0.0)
-                drop_score = float(st.get('dropout_score', 0.0) or 0.0)
+                # Use existing predictions
+                perf_label = str(st.get('performance_label', 'medium')).lower()
+                risk_label = str(st.get('risk_label', 'medium')).lower()
+                drop_label = str(st.get('dropout_label', 'medium')).lower()
+                perf_score = float(st.get('performance_overall', 50.0) or 50.0)
+                risk_score = float(st.get('risk_score', 50.0) or 50.0)
+                drop_score = float(st.get('dropout_score', 50.0) or 50.0)
             else:
-                # Compute predictions if not available
+                # Compute predictions
                 try:
                     feats = compute_features(st)
                     preds = predict_student(feats)
@@ -240,22 +240,13 @@ def analyze_subset(df):
                     perf_score = feats["performance_overall"]
                     risk_score = feats["risk_score"]
                     drop_score = feats["dropout_score"]
-                    
-                    # Update MySQL with computed predictions
-                    try:
-                        update_data = feats.copy()
-                        update_data.update(preds)
-                        update_student(st.get('RNO'), update_data)
-                    except Exception as update_err:
-                        print(f"[WARN] Failed to update predictions for {st.get('RNO')}: {update_err}")
-                        
                 except Exception as e:
                     print(f"[WARN] Prediction failed for student {st.get('RNO', 'unknown')}: {e}")
-                    perf_label = 'poor'
-                    risk_label = 'high'
+                    perf_label = 'medium'
+                    risk_label = 'medium'
                     drop_label = 'medium'
-                    perf_score = 30.0
-                    risk_score = 70.0
+                    perf_score = 50.0
+                    risk_score = 50.0
                     drop_score = 50.0
 
             perf_labels.append(perf_label)
@@ -738,22 +729,40 @@ def api_analytics_preview():
     high_risk = 0
     high_dropout = 0
     
-    if 'risk_label' in data_source.columns:
-        high_risk = len(data_source[data_source['risk_label'] == 'high'])
-    if 'dropout_label' in data_source.columns:
-        high_dropout = len(data_source[data_source['dropout_label'] == 'high'])
-    
-    # Get sample students for preview
+    # Get sample students for preview with predictions
     sample_students = []
     for _, row in data_source.head(100).iterrows():
+        student_dict = row.to_dict()
+        
+        # Check if predictions exist, if not compute them
+        if (not student_dict.get('performance_label') or 
+            student_dict.get('performance_label') in ['', 'nan', 'unknown']):
+            try:
+                feats = compute_features(student_dict)
+                preds = predict_student(feats)
+                student_dict.update(preds)
+            except Exception as e:
+                print(f"[WARN] Prediction failed for {student_dict.get('RNO')}: {e}")
+                student_dict.update({
+                    'performance_label': 'medium',
+                    'risk_label': 'medium', 
+                    'dropout_label': 'medium'
+                })
+        
+        # Count risk levels
+        if student_dict.get('risk_label') == 'high':
+            high_risk += 1
+        if student_dict.get('dropout_label') == 'high':
+            high_dropout += 1
+            
         student = {
-            'RNO': row.get('RNO', ''),
-            'NAME': row.get('NAME', ''),
-            'DEPT': row.get('DEPT', ''),
-            'YEAR': safe_int(row.get('YEAR', 0)),
-            'performance_label': row.get('performance_label', 'unknown'),
-            'risk_label': row.get('risk_label', 'unknown'),
-            'dropout_label': row.get('dropout_label', 'unknown')
+            'RNO': student_dict.get('RNO', ''),
+            'NAME': student_dict.get('NAME', ''),
+            'DEPT': student_dict.get('DEPT', ''),
+            'YEAR': safe_int(student_dict.get('YEAR', 0)),
+            'performance_label': student_dict.get('performance_label', 'medium'),
+            'risk_label': student_dict.get('risk_label', 'medium'),
+            'dropout_label': student_dict.get('dropout_label', 'medium')
         }
         sample_students.append(student)
     
