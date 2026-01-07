@@ -344,6 +344,8 @@ def api_student_search():
         data = request.get_json(silent=True) or {}
         rno = data.get("rno", "").strip()
 
+        print(f"Student search request for RNO: {rno}")
+
         if not rno:
             return jsonify({"success": False, "message": "Please provide Register Number."}), 400
 
@@ -355,34 +357,52 @@ def api_student_search():
             'Accept': 'application/json'
         }
         
+        print(f"Searching URL: {url}")
         response = requests.get(url, headers=headers, timeout=10)
+        print(f"Search response status: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
+            print(f"Found {len(data)} records")
             if data:
                 student = data[0]
-                # Convert keys to uppercase
-                student_data = {k.upper(): v for k, v in student.items()}
+                print(f"Student found: {student.get('name', 'Unknown')}")
                 
-                # Ensure all required fields exist
-                required_fields = {
-                    "NAME": "", "RNO": "", "EMAIL": "", "DEPT": "", "YEAR": 0, "CURR_SEM": 0,
-                    "MENTOR": "", "MENTOR_EMAIL": "", "SEM1": 0, "SEM2": 0, "SEM3": 0, "SEM4": 0,
-                    "SEM5": 0, "SEM6": 0, "SEM7": 0, "SEM8": 0, "INTERNAL_MARKS": 20,
-                    "TOTAL_DAYS_CURR": 90, "ATTENDED_DAYS_CURR": 80, "PREV_ATTENDANCE_PERC": 85,
-                    "BEHAVIOR_SCORE_10": 7
+                # Convert keys to uppercase and ensure all fields exist
+                student_data = {
+                    "NAME": str(student.get("name", "")),
+                    "RNO": str(student.get("rno", "")),
+                    "EMAIL": str(student.get("email", "")),
+                    "DEPT": str(student.get("dept", "")),
+                    "YEAR": int(student.get("year", 0) or 0),
+                    "CURR_SEM": int(student.get("curr_sem", 0) or 0),
+                    "MENTOR": str(student.get("mentor", "") or ""),
+                    "MENTOR_EMAIL": str(student.get("mentor_email", "") or ""),
+                    "SEM1": float(student.get("sem1", 0) or 0),
+                    "SEM2": float(student.get("sem2", 0) or 0),
+                    "SEM3": float(student.get("sem3", 0) or 0),
+                    "SEM4": float(student.get("sem4", 0) or 0),
+                    "SEM5": float(student.get("sem5", 0) or 0),
+                    "SEM6": float(student.get("sem6", 0) or 0),
+                    "SEM7": float(student.get("sem7", 0) or 0),
+                    "SEM8": float(student.get("sem8", 0) or 0),
+                    "INTERNAL_MARKS": float(student.get("internal_marks", 20) or 20),
+                    "TOTAL_DAYS_CURR": float(student.get("total_days_curr", 90) or 90),
+                    "ATTENDED_DAYS_CURR": float(student.get("attended_days_curr", 80) or 80),
+                    "PREV_ATTENDANCE_PERC": float(student.get("prev_attendance_perc", 85) or 85),
+                    "BEHAVIOR_SCORE_10": float(student.get("behavior_score_10", 7) or 7)
                 }
                 
-                for field, default in required_fields.items():
-                    if field not in student_data or student_data[field] is None:
-                        student_data[field] = default
-                
+                print("Student data prepared successfully")
                 return jsonify({"success": True, "student": student_data})
         
+        print("Student not found")
         return jsonify({"success": False, "message": "Student not found."}), 404
         
     except Exception as e:
         print(f"Student search error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route("/api/student/predict", methods=["POST"])
