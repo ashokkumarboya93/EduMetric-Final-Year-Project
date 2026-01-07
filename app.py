@@ -117,16 +117,41 @@ def analyze_subset(df):
         try:
             st = row.to_dict()
             
+            # Skip if missing essential data
             if not st.get('RNO') or not st.get('NAME'):
                 continue
             
-            features = compute_features(st)
-            predictions = predict_student(features)
+            # Use existing predictions if available, otherwise compute
+            if (st.get('PERFORMANCE_LABEL') and st.get('RISK_LABEL') and st.get('DROPOUT_LABEL') and
+                st.get('PERFORMANCE_OVERALL') is not None):
+                # Use existing data
+                perf_label = str(st.get('PERFORMANCE_LABEL', 'medium')).lower()
+                risk_label = str(st.get('RISK_LABEL', 'medium')).lower()
+                drop_label = str(st.get('DROPOUT_LABEL', 'medium')).lower()
+                perf_score = float(st.get('PERFORMANCE_OVERALL', 50) or 50)
+                risk_score = float(st.get('RISK_SCORE', 50) or 50)
+                drop_score = float(st.get('DROPOUT_SCORE', 50) or 50)
+            else:
+                # Compute new predictions
+                try:
+                    features = compute_features(st)
+                    predictions = predict_student(features)
+                    perf_label = predictions["performance_label"]
+                    risk_label = predictions["risk_label"]
+                    drop_label = predictions["dropout_label"]
+                    perf_score = features["performance_overall"]
+                    risk_score = features["risk_score"]
+                    drop_score = features["dropout_score"]
+                except Exception as e:
+                    print(f"Prediction error for {st.get('RNO')}: {e}")
+                    # Use safe defaults
+                    perf_label, risk_label, drop_label = 'medium', 'medium', 'medium'
+                    perf_score, risk_score, drop_score = 50.0, 50.0, 50.0
             
-            perf_labels.append(predictions["performance_label"])
-            risk_labels.append(predictions["risk_label"])
-            drop_labels.append(predictions["dropout_label"])
-            perf_scores.append(features["performance_overall"])
+            perf_labels.append(perf_label)
+            risk_labels.append(risk_label)
+            drop_labels.append(drop_label)
+            perf_scores.append(float(perf_score))
 
             table.append({
                 "RNO": str(st.get("RNO", "")),
@@ -134,32 +159,47 @@ def analyze_subset(df):
                 "DEPT": str(st.get("DEPT", "")),
                 "YEAR": int(st.get("YEAR", 0) or 0),
                 "CURR_SEM": int(st.get("CURR_SEM", 0) or 0),
-                "performance_label": predictions["performance_label"],
-                "risk_label": predictions["risk_label"],
-                "dropout_label": predictions["dropout_label"],
-                "performance_overall": features["performance_overall"],
-                "risk_score": features["risk_score"],
-                "dropout_score": features["dropout_score"]
+                "performance_label": perf_label,
+                "risk_label": risk_label,
+                "dropout_label": drop_label,
+                "performance_overall": float(perf_score),
+                "risk_score": float(risk_score),
+                "dropout_score": float(drop_score)
             })
         except Exception as e:
-            print(f"Error processing student: {e}")
+            print(f"Error processing student row: {e}")
             continue
 
-    stats = {
-        "total_students": len(table),
-        "high_performers": perf_labels.count("high"),
-        "high_risk": risk_labels.count("high"),
-        "high_dropout": drop_labels.count("high"),
-        "avg_performance": round(float(np.mean(perf_scores)) if perf_scores else 0.0, 2)
-    }
+    if not table:
+        return {
+            "stats": {"total_students": 0, "high_performers": 0, "high_risk": 0, "high_dropout": 0, "avg_performance": 0.0},
+            "label_counts": {"performance": {}, "risk": {}, "dropout": {}},
+            "table": []
+        }
 
-    label_counts = {
-        "performance": {k: perf_labels.count(k) for k in set(perf_labels)},
-        "risk": {k: risk_labels.count(k) for k in set(risk_labels)},
-        "dropout": {k: drop_labels.count(k) for k in set(drop_labels)}
-    }
+    try:
+        stats = {
+            "total_students": len(table),
+            "high_performers": perf_labels.count("high"),
+            "high_risk": risk_labels.count("high"),
+            "high_dropout": drop_labels.count("high"),
+            "avg_performance": round(float(np.mean(perf_scores)) if perf_scores else 0.0, 2)
+        }
 
-    return {"stats": stats, "label_counts": label_counts, "table": table}
+        label_counts = {
+            "performance": {k: perf_labels.count(k) for k in set(perf_labels) if k},
+            "risk": {k: risk_labels.count(k) for k in set(risk_labels) if k},
+            "dropout": {k: drop_labels.count(k) for k in set(drop_labels) if k}
+        }
+
+        return {"stats": stats, "label_counts": label_counts, "table": table}
+    except Exception as e:
+        print(f"Stats computation error: {e}")
+        return {
+            "stats": {"total_students": len(table), "high_performers": 0, "high_risk": 0, "high_dropout": 0, "avg_performance": 0.0},
+            "label_counts": {"performance": {}, "risk": {}, "dropout": {}},
+            "table": table
+        }
 
 @app.route("/")
 def index():
