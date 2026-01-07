@@ -2211,6 +2211,9 @@ def api_chat():
 
 if __name__ == "__main__":
     app.run(debug=DEBUG, host='0.0.0.0', port=PORT)
+else:
+    # For Railway deployment
+    application = app
 
 @app.route("/test-db")
 def test_db_connection():
