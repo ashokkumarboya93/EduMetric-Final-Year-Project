@@ -49,3 +49,4 @@ test_*.py
 # Temporary files
 temp_*.png
 temp_*.pdf
+.vercel

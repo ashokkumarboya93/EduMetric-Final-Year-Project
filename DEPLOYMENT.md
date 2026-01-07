@@ -25,13 +25,15 @@ git push -u origin main
 5. Configure environment variables:
 
 ### 3. Environment Variables (Add in Vercel Dashboard)
+In Vercel project settings → Environment Variables, add:
+
 ```
 SUPABASE_URL = https://jxpsvsxyhfetqbdkszkz.supabase.co
 SUPABASE_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp4cHN2c3h5aGZldHFiZGtzemt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2ODgwODMsImV4cCI6MjA4MDI2NDA4M30.7LOJ9XDUaxR6mFGpsWjnLk8TZmEsmDWrddcu-kVc3hM
-SECRET_KEY = edumetric-secret-key-2024-final-year-project-secure
+SECRET_KEY = d2a9e8b1c3f7a0e9d8c6b5a4d3e2f1a0
 DEBUG = False
-EMAIL_USER = ashokkumarboya999@gmail.com
-EMAIL_PASSWORD = ashok123@
+EMAIL_USER = ashokkumarboya93@gmail.com
+EMAIL_PASSWORD = hctaatovfwfxfmrm
 ```
 
 ### 4. Deploy

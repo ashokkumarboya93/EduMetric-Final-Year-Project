@@ -2207,7 +2207,7 @@ def api_chat():
         })
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=DEBUG, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
 
 @app.route("/test-db")
 def test_db_connection():
