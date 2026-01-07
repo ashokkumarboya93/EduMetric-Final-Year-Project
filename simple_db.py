@@ -7,43 +7,38 @@ SUPABASE_KEY = os.environ.get('SUPABASE_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXV
 
 def load_students_df():
     try:
+        url = f"{SUPABASE_URL}/rest/v1/students?select=*"
         headers = {
             'apikey': SUPABASE_KEY,
             'Authorization': f'Bearer {SUPABASE_KEY}',
             'Accept': 'application/json'
         }
         
-        # Try different table names
-        table_names = ['students', 'student_data', 'edumetric_students', 'analytics_data']
+        print(f"Connecting to: {url}")
+        response = requests.get(url, headers=headers, timeout=15)
+        print(f"Response status: {response.status_code}")
         
-        for table_name in table_names:
-            try:
-                url = f"{SUPABASE_URL}/rest/v1/{table_name}?select=*&limit=100"
-                response = requests.get(url, headers=headers, timeout=10)
-                
-                print(f"Trying table '{table_name}': Status {response.status_code}")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if data and len(data) > 0:
-                        print(f"Found {len(data)} records in table '{table_name}'")
-                        df = pd.DataFrame(data)
-                        df.columns = df.columns.str.upper()
-                        return df
-                else:
-                    print(f"Table '{table_name}' response: {response.text[:200]}")
-            except Exception as e:
-                print(f"Error with table '{table_name}': {e}")
-                continue
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Found {len(data)} records")
+            
+            if data and len(data) > 0:
+                df = pd.DataFrame(data)
+                # Convert column names to uppercase for consistency
+                df.columns = df.columns.str.upper()
+                print(f"Columns: {list(df.columns)}")
+                return df
+        else:
+            print(f"Error response: {response.text}")
         
-        print("No valid tables found, using sample data")
         return create_sample_data()
         
     except Exception as e:
-        print(f"Supabase connection error: {e}")
+        print(f"Supabase error: {e}")
         return create_sample_data()
 
 def create_sample_data():
+    print("Using sample data")
     sample_data = [
         {
             'RNO': '23G31A4790',
@@ -71,21 +66,6 @@ def create_sample_data():
             'ATTENDED_DAYS_CURR': 80,
             'PREV_ATTENDANCE_PERC': 88,
             'BEHAVIOR_SCORE_10': 8
-        },
-        {
-            'RNO': '22G31A3167',
-            'NAME': 'Raj Kumar',
-            'DEPT': 'MECH',
-            'YEAR': 2,
-            'CURR_SEM': 3,
-            'SEM1': 75,
-            'SEM2': 78,
-            'SEM3': 72,
-            'INTERNAL_MARKS': 22,
-            'TOTAL_DAYS_CURR': 90,
-            'ATTENDED_DAYS_CURR': 75,
-            'PREV_ATTENDANCE_PERC': 80,
-            'BEHAVIOR_SCORE_10': 7
         }
     ]
     
@@ -104,7 +84,7 @@ def get_stats():
         }
     except:
         return {
-            'total_students': 3,
+            'total_students': 2,
             'departments': ['CSE', 'ECE', 'MECH', 'CIVIL', 'EEE'],
             'years': [1, 2, 3, 4]
         }
