@@ -12,6 +12,7 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 # Flask configuration
 SECRET_KEY = os.getenv('SECRET_KEY', 'edumetric-secret-key-2024-final-year-project-secure')
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+PORT = int(os.getenv('PORT', 5000))
 
 # Email configuration
 EMAIL_HOST = 'smtp.gmail.com'

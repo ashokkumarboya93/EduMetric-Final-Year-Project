@@ -12,7 +12,7 @@ from supabase_db import (
     get_stats, create_students_table, test_connection
 )
 from db import update_student
-from config import SECRET_KEY, DEBUG, EMAIL_USER, EMAIL_PASSWORD
+from config import SECRET_KEY, DEBUG, EMAIL_USER, EMAIL_PASSWORD, PORT
 
 try:
     from fpdf2 import FPDF
@@ -2206,8 +2206,11 @@ def api_chat():
             "type": "error"
         })
 
+# Remove the if __name__ == "__main__" block for Vercel
+# Vercel uses the api/index.py entry point instead
+
 if __name__ == "__main__":
-    app.run(debug=DEBUG, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(debug=DEBUG, host='0.0.0.0', port=PORT)
 
 @app.route("/test-db")
 def test_db_connection():
