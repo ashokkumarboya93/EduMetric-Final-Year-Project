@@ -15,6 +15,10 @@
 
     <!-- Plotly -->
     <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+    
+    <!-- jsPDF for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <!-- Chat JS disabled for current release -->
     <!-- <script src="{{ url_for('static', filename='js/chat.js') }}"></script> -->
@@ -591,13 +595,22 @@
 
                     <!-- Charts -->
                     <div class="chart-grid">
-                        <div class="chart-card" id="st-chart-marks"></div>
-                        <div class="chart-card" id="st-chart-radar"></div>
-                        <div class="chart-card" id="st-chart-scores"></div>
-                        <div class="chart-card" id="st-chart-donut"></div>
-                        <div class="gauge-row">
+                        <div class="chart-row-2">
+                            <div class="chart-card" id="st-chart-marks"></div>
+                            <div class="chart-card" id="st-chart-perf-pie"></div>
+                        </div>
+                        <div class="chart-row-2">
+                            <div class="chart-card" id="st-chart-metrics-bar"></div>
+                            <div class="chart-card" id="st-chart-3d-plot"></div>
+                        </div>
+                        <div class="chart-row-2">
+                            <div class="chart-card" id="st-chart-radar"></div>
+                            <div class="chart-card" id="st-chart-heatmap"></div>
+                        </div>
+                        <div class="chart-row-3">
                             <div class="chart-card" id="st-chart-gauge-perf"></div>
                             <div class="chart-card" id="st-chart-gauge-att"></div>
+                            <div class="chart-card" id="st-chart-gauge-risk"></div>
                         </div>
                     </div>
 
@@ -679,22 +692,33 @@
                     </div>
 
                     <div class="chart-grid">
-                        <div class="chart-card" id="dept-chart-perf-donut"></div>
-                        <div class="chart-card" id="dept-chart-risk-donut"></div>
-                        <div class="chart-card" id="dept-chart-drop-donut"></div>
-                        <div class="chart-card" id="dept-chart-3d"></div>
+                        <div class="chart-row-2">
+                            <div class="chart-card" id="dept-chart-1"></div>
+                            <div class="chart-card" id="dept-chart-2"></div>
+                        </div>
+                        <div class="chart-row-2">
+                            <div class="chart-card" id="dept-chart-3"></div>
+                            <div class="chart-card" id="dept-chart-4"></div>
+                        </div>
+                        <div class="chart-row-1">
+                            <div class="chart-card" id="dept-chart-5"></div>
+                        </div>
                     </div>
 
                     <div class="bottom-layout">
                         <div class="card summary-card">
-                            <h3>Department Summary & Insights</h3>
+                            <h3>AI Summary & Suggestions</h3>
                             <div id="dept-summary"></div>
-                        </div>
-                        <div class="card actions-card">
-                            <h3>Exports</h3>
-                            <button class="secondary-btn" onclick="exportDeptCSV()">
-                                <i class="fa-solid fa-download"></i> Export Department
-                            </button>
+                            <ul id="dept-suggestions"></ul>
+                            
+                            <div class="action-buttons">
+                                <button class="secondary-btn" onclick="exportDeptCSV()">
+                                    <i class="fa-solid fa-download"></i> Export Data
+                                </button>
+                                <button class="secondary-btn" onclick="exportDeptPDF()">
+                                    <i class="fa-solid fa-file-pdf"></i> Export Report
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

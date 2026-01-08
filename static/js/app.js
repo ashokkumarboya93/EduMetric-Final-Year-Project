@@ -514,8 +514,9 @@ function renderStudentHeader(result) {
 function renderStudentCharts(result) {
     const s = result.student;
     const f = result.features;
+    const p = result.predictions;
 
-    // Marks Trend Chart with description
+    // 1. SCATTER PLOT WITH LINE - Semester Marks Trend
     const marks = [];
     const semLabels = [];
     for (let i = 1; i <= 8; i++) {
@@ -526,214 +527,140 @@ function renderStudentCharts(result) {
         }
     }
     
-    const marksChart = document.getElementById("st-chart-marks");
-    if (marksChart) {
-        // Add description
-        const marksDesc = document.createElement('div');
-        marksDesc.className = 'chart-description';
-        marksDesc.innerHTML = `<i class="fa-solid fa-info-circle"></i> Shows academic performance trend across semesters. ${marks.length > 1 ? (marks[marks.length-1] > marks[0] ? 'Improving trend <i class="fa-solid fa-arrow-trend-up"></i>' : 'Declining trend <i class="fa-solid fa-arrow-trend-down"></i>') : 'Limited data available'}.`;
-        marksChart.appendChild(marksDesc);
+    if (document.getElementById("st-chart-marks")) {
         const layout = {
             ...window.defaultLayout,
-            title: {
-                text: "Semester-wise Marks Trend",
-                font: { size: 18, color: '#1976d2' },
-                x: 0.5
-            },
-            yaxis: { 
-                range: [0, 100], 
-                title: { text: 'Marks (%)', font: { size: 14 } },
-                gridcolor: 'rgba(0,0,0,0.1)'
-            },
-            xaxis: { 
-                title: { text: 'Semesters', font: { size: 14 } },
-                gridcolor: 'rgba(0,0,0,0.1)'
-            },
-            height: 400
+            title: { text: "Semester Performance Trend", font: { size: 16, color: '#1976d2' } },
+            height: 300
         };
         
         Plotly.newPlot("st-chart-marks", [{
-            x: semLabels,
-            y: marks,
-            type: "scatter",
-            mode: "lines+markers",
-            line: { width: 4, color: '#1976d2' },
-            marker: { size: 10, color: '#1976d2', line: { color: '#fff', width: 2 } },
-            hovertemplate: '<b>%{x}</b><br>Marks: %{y}%<extra></extra>'
+            x: semLabels, y: marks, type: "scatter", mode: "lines+markers",
+            line: { width: 3, color: '#1976d2' },
+            marker: { size: 8, color: '#1976d2' }
         }], layout, window.defaultChartConfig);
     }
 
-    // Radar Chart
+    // 2. PIE CHART - Performance/Risk/Dropout Combined
+    if (document.getElementById("st-chart-perf-pie")) {
+        const layout = {
+            ...window.defaultLayout,
+            title: { text: "Performance Analysis", font: { size: 16, color: '#1976d2' } },
+            height: 300
+        };
+        
+        Plotly.newPlot("st-chart-perf-pie", [{
+            labels: ["Performance", "Risk", "Dropout"],
+            values: [f.performance_overall, f.risk_score, f.dropout_score],
+            type: "pie",
+            marker: { colors: ['#4CAF50', '#FF9800', '#F44336'] }
+        }], layout, window.defaultChartConfig);
+    }
+
+    // 3. BAR CHART - Key Metrics
+    if (document.getElementById("st-chart-metrics-bar")) {
+        const layout = {
+            ...window.defaultLayout,
+            title: { text: "Key Metrics", font: { size: 16, color: '#1976d2' } },
+            height: 300
+        };
+        
+        Plotly.newPlot("st-chart-metrics-bar", [{
+            x: ["Attendance", "Internal", "Behavior", "Performance"],
+            y: [f.attendance_pct, f.internal_pct, f.behavior_pct, f.performance_overall],
+            type: "bar",
+            marker: { color: ['#00897b', '#4CAF50', '#9C27B0', '#1976d2'] }
+        }], layout, window.defaultChartConfig);
+    }
+
+    // 4. 3D PLOT - Multi-dimensional Analysis
+    if (document.getElementById("st-chart-3d-plot")) {
+        const layout = {
+            ...window.defaultLayout,
+            title: { text: "3D Analysis", font: { size: 16, color: '#1976d2' } },
+            scene: {
+                xaxis: { title: "Attendance" }, yaxis: { title: "Performance" }, zaxis: { title: "Risk" }
+            },
+            height: 300
+        };
+        
+        Plotly.newPlot("st-chart-3d-plot", [{
+            x: [f.attendance_pct], y: [f.performance_overall], z: [f.risk_score],
+            mode: "markers", type: "scatter3d",
+            marker: { size: 12, color: f.performance_overall, colorscale: 'RdYlGn' }
+        }], layout, window.defaultChartConfig);
+    }
+
+    // 5. RADAR CHART - Multi-dimensional Performance
     if (document.getElementById("st-chart-radar")) {
         const layout = {
             ...window.defaultLayout,
-            title: {
-                text: "Attendance & Behavior Profile",
-                font: { size: 18, color: '#1976d2' },
-                x: 0.5
+            title: { text: "Performance Radar", font: { size: 16, color: '#1976d2' } },
+            polar: {
+                radialaxis: { visible: true, range: [0, 100] }
             },
-            polar: { 
-                radialaxis: { 
-                    visible: true, 
-                    range: [0, 100],
-                    tickfont: { size: 12 },
-                    gridcolor: 'rgba(0,0,0,0.1)'
-                },
-                angularaxis: {
-                    tickfont: { size: 12 }
-                }
-            },
-            height: 400
+            height: 300
         };
         
         Plotly.newPlot("st-chart-radar", [{
             type: "scatterpolar",
-            r: [f.present_att, f.prev_att, f.behavior_pct, f.present_att],
-            theta: ["Present Attendance", "Prev Attendance", "Behavior Impact", "Present Attendance"],
+            r: [f.performance_overall, f.attendance_pct, f.internal_pct, f.behavior_pct, 100-f.risk_score, 100-f.dropout_score],
+            theta: ["Performance", "Attendance", "Internal", "Behavior", "Safety", "Retention"],
             fill: "toself",
-            fillcolor: 'rgba(25, 118, 210, 0.2)',
-            line: { color: '#1976d2', width: 3 },
-            marker: { color: '#1976d2', size: 8 },
-            hovertemplate: '<b>%{theta}</b><br>Value: %{r:.1f}%<extra></extra>'
+            marker: { color: '#1976d2' },
+            line: { color: '#1976d2' }
         }], layout, window.defaultChartConfig);
     }
 
-    // Scores Bar Chart
-    if (document.getElementById("st-chart-scores")) {
+    // 6. HEATMAP - Performance Matrix
+    if (document.getElementById("st-chart-heatmap")) {
         const layout = {
             ...window.defaultLayout,
-            title: {
-                text: "Overall Scores",
-                font: { size: 18, color: '#1976d2' },
-                x: 0.5
-            },
-            yaxis: { 
-                range: [0, 100], 
-                title: { text: 'Score (%)', font: { size: 14 } },
-                gridcolor: 'rgba(0,0,0,0.1)'
-            },
-            xaxis: { 
-                title: { text: 'Metrics', font: { size: 14 } },
-                gridcolor: 'rgba(0,0,0,0.1)'
-            },
-            height: 400
+            title: { text: "Performance Heatmap", font: { size: 16, color: '#1976d2' } },
+            height: 300
         };
         
-        Plotly.newPlot("st-chart-scores", [{
-            x: ["Performance", "Risk", "Dropout"],
-            y: [f.performance_overall, f.risk_score, f.dropout_score],
-            type: "bar",
-            marker: { 
-                color: ['#4CAF50', '#FF9800', '#F44336'],
-                line: { color: '#fff', width: 2 }
-            },
-            hovertemplate: '<b>%{x}</b><br>Score: %{y:.1f}%<extra></extra>'
+        const heatmapData = [
+            [f.performance_overall, f.attendance_pct],
+            [f.internal_pct, f.behavior_pct],
+            [100-f.risk_score, 100-f.dropout_score]
+        ];
+        
+        Plotly.newPlot("st-chart-heatmap", [{
+            z: heatmapData,
+            x: ["Primary", "Secondary"],
+            y: ["Performance", "Academics", "Risk Factors"],
+            type: "heatmap",
+            colorscale: "RdYlGn",
+            showscale: true
         }], layout, window.defaultChartConfig);
     }
 
-    // Donut Chart
-    if (document.getElementById("st-chart-donut")) {
-        const layout = {
-            ...window.defaultLayout,
-            title: {
-                text: "Performance Composition",
-                font: { size: 18, color: '#1976d2' },
-                x: 0.5
-            },
-            showlegend: true,
-            legend: { 
-                orientation: 'h', 
-                y: -0.15,
-                x: 0.5,
-                xanchor: 'center',
-                font: { size: 12 }
-            },
-            height: 400
-        };
-        
-        Plotly.newPlot("st-chart-donut", [{
-            values: [f.past_avg, f.internal_pct, f.attendance_pct, f.behavior_pct],
-            labels: ["Past Average", "Internal Marks", "Attendance", "Behavior"],
-            type: "pie",
-            hole: 0.4,
-            marker: { 
-                colors: ['#2196F3', '#4CAF50', '#FF9800', '#9C27B0'],
-                line: { color: '#fff', width: 2 }
-            },
-            textinfo: 'label+percent',
-            textposition: 'auto',
-            hovertemplate: '<b>%{label}</b><br>Score: %{value:.1f}%<br>Percentage: %{percent}<extra></extra>'
-        }], layout, window.defaultChartConfig);
-    }
-
-    // Performance Gauge
+    // GAUGES ROW - Performance, Attendance, Risk
     if (document.getElementById("st-chart-gauge-perf")) {
-        const layout = {
-            ...window.defaultLayout,
-            title: {
-                text: "Performance Gauge",
-                font: { size: 18, color: '#1976d2' },
-                x: 0.5
-            },
-            height: 400,
-            margin: { l: 40, r: 40, t: 80, b: 40 }
-        };
-        
+        const layout = { title: { text: "Performance", font: { size: 14 } }, height: 200, margin: { l: 20, r: 20, t: 50, b: 20 } };
         Plotly.newPlot("st-chart-gauge-perf", [{
-            type: "indicator",
-            mode: "gauge+number+delta",
-            value: f.performance_overall,
-            delta: { reference: 70, increasing: { color: "#4CAF50" }, decreasing: { color: "#F44336" } },
-            gauge: {
-                axis: { range: [0, 100], tickfont: { size: 12 } },
-                steps: [
-                    { range: [0, 50], color: "#ffcdd2" },
-                    { range: [50, 70], color: "#fff9c4" },
-                    { range: [70, 100], color: "#c8e6c9" }
-                ],
-                bar: { color: "#1976d2", thickness: 0.8 },
-                threshold: {
-                    line: { color: "red", width: 4 },
-                    thickness: 0.75,
-                    value: 70
-                }
-            },
-            number: { font: { size: 24 } }
+            type: "indicator", mode: "gauge+number", value: f.performance_overall,
+            gauge: { axis: { range: [0, 100] }, bar: { color: "#1976d2" },
+                steps: [{ range: [0, 50], color: "#ffcdd2" }, { range: [50, 75], color: "#fff9c4" }, { range: [75, 100], color: "#c8e6c9" }] }
         }], layout, window.defaultChartConfig);
     }
 
-    // Attendance Gauge
     if (document.getElementById("st-chart-gauge-att")) {
-        const layout = {
-            ...window.defaultLayout,
-            title: {
-                text: "Attendance Gauge",
-                font: { size: 18, color: '#1976d2' },
-                x: 0.5
-            },
-            height: 400,
-            margin: { l: 40, r: 40, t: 80, b: 40 }
-        };
-        
+        const layout = { title: { text: "Attendance", font: { size: 14 } }, height: 200, margin: { l: 20, r: 20, t: 50, b: 20 } };
         Plotly.newPlot("st-chart-gauge-att", [{
-            type: "indicator",
-            mode: "gauge+number+delta",
-            value: f.attendance_pct,
-            delta: { reference: 75, increasing: { color: "#4CAF50" }, decreasing: { color: "#F44336" } },
-            gauge: {
-                axis: { range: [0, 100], tickfont: { size: 12 } },
-                steps: [
-                    { range: [0, 75], color: "#ffcdd2" },
-                    { range: [75, 100], color: "#c8e6c9" }
-                ],
-                bar: { color: "#00897b", thickness: 0.8 },
-                threshold: {
-                    line: { color: "orange", width: 4 },
-                    thickness: 0.75,
-                    value: 75
-                }
-            },
-            number: { font: { size: 24 } }
+            type: "indicator", mode: "gauge+number", value: f.attendance_pct,
+            gauge: { axis: { range: [0, 100] }, bar: { color: "#00897b" },
+                steps: [{ range: [0, 75], color: "#ffcdd2" }, { range: [75, 100], color: "#c8e6c9" }] }
+        }], layout, window.defaultChartConfig);
+    }
+
+    if (document.getElementById("st-chart-gauge-risk")) {
+        const layout = { title: { text: "Risk Level", font: { size: 14 } }, height: 200, margin: { l: 20, r: 20, t: 50, b: 20 } };
+        Plotly.newPlot("st-chart-gauge-risk", [{
+            type: "indicator", mode: "gauge+number", value: f.risk_score,
+            gauge: { axis: { range: [0, 100] }, bar: { color: "#FF5722" },
+                steps: [{ range: [0, 30], color: "#c8e6c9" }, { range: [30, 70], color: "#fff9c4" }, { range: [70, 100], color: "#ffcdd2" }] }
         }], layout, window.defaultChartConfig);
     }
 }
@@ -759,11 +686,28 @@ function renderStudentSummary(result) {
         </div>`;
     }
 
+    // MANDATORY: Deterministic Summary Generation
+    let trendAnalysis = "stable";
+    const marks = [];
+    for (let i = 1; i <= 8; i++) {
+        const sem = result.student[`SEM${i}`];
+        if (sem && parseFloat(sem) > 0) marks.push(parseFloat(sem));
+    }
+    if (marks.length >= 2) {
+        const trend = marks[marks.length - 1] - marks[0];
+        trendAnalysis = trend > 5 ? "improving" : trend < -5 ? "declining" : "stable";
+    }
+
+    let attendanceStatus = f.attendance_pct >= 85 ? "excellent" : f.attendance_pct >= 75 ? "adequate" : f.attendance_pct >= 60 ? "below optimal" : "critically low";
+    let performanceLevel = p.performance_label === "high" ? "excellent" : p.performance_label === "medium" ? "moderate" : p.performance_label === "low" ? "concerning" : "critical";
+    
+    const summaryText = `The student shows ${performanceLevel} academic performance with ${trendAnalysis} semester trend. Attendance is ${attendanceStatus} level (${f.attendance_pct.toFixed(1)}%), contributing to ${p.risk_label} academic risk. Internal assessment performance is ${f.internal_pct >= 80 ? "strong" : f.internal_pct >= 60 ? "satisfactory" : "needs improvement"} at ${f.internal_pct.toFixed(1)}%.`;
+
     summaryDiv.innerHTML = `
         ${alertNotice}
-        <p><i class="fa-solid fa-chart-bar"></i> Overall academic performance is <b>${p.performance_label.toUpperCase()}</b> (${f.performance_overall.toFixed(1)}%).</p>
-        <p><i class="fa-solid fa-triangle-exclamation"></i> Risk indicators: <b>${p.risk_label.toUpperCase()}</b>, Dropout risk: <b>${p.dropout_label.toUpperCase()}</b>.</p>
-        <p><i class="fa-solid fa-calendar-check"></i> Attendance: <b>${f.attendance_pct.toFixed(1)}%</b> (Present: ${f.present_att}%, Previous: ${f.prev_att}%).</p>
+        <p><i class="fa-solid fa-chart-bar"></i> <strong>Performance Summary:</strong> ${summaryText}</p>
+        <p><i class="fa-solid fa-triangle-exclamation"></i> <strong>Risk Assessment:</strong> ${p.risk_label.toUpperCase()} risk (${f.risk_score.toFixed(1)}%), Dropout risk: ${p.dropout_label.toUpperCase()} (${f.dropout_score.toFixed(1)}%)</p>
+        <p><i class="fa-solid fa-calendar-check"></i> <strong>Attendance Analysis:</strong> Current: ${f.attendance_pct.toFixed(1)}%, Previous: ${f.prev_att.toFixed(1)}%, Behavior: ${f.behavior_pct.toFixed(1)}%</p>
     `;
 
     function addSuggestion(t) {
@@ -772,12 +716,16 @@ function renderStudentSummary(result) {
         suggUl.appendChild(li);
     }
 
-    // Enhanced suggestions based on performance levels
+    // MANDATORY: Rule-based Suggestions (Not AI-generated)
     if (p.performance_label === "poor") {
         addSuggestion("<strong>CRITICAL:</strong> Immediate intervention required - schedule emergency counseling session within 24 hours.");
         addSuggestion("Implement intensive remedial program with daily 1-hour sessions for 2 weeks.");
         addSuggestion("Arrange peer tutoring with high-performing students in the same department.");
         addSuggestion("Contact parents/guardians immediately to discuss academic support strategies.");
+    } else if (p.performance_label === "low") {
+        addSuggestion("Schedule weekly mentoring sessions to monitor progress and provide support.");
+        addSuggestion("Provide targeted practice materials focusing on weak subject areas.");
+        addSuggestion("Implement structured study plan with specific milestones.");
     } else if (p.performance_label === "medium") {
         addSuggestion("Schedule bi-weekly mentoring sessions to monitor progress and prevent decline.");
         addSuggestion("Provide targeted practice materials focusing on weak subject areas.");
@@ -936,13 +884,15 @@ async function sendAlertEmailDirect() {
     const p = currentStudentResult.predictions;
     const f = currentStudentResult.features;
 
-    const email = "ashokkumarboya999@gmail.com";
+    const email = "ashokkumarboya93@gmail.com";
     
     const payload = {
-        email: email,
-        student: s,
-        predictions: p,
-        features: f
+        mentor_email: email,
+        student_name: s.NAME,
+        student_rno: s.RNO,
+        performance: p.performance_label,
+        risk: p.risk_label,
+        dropout: p.dropout_label
     };
 
     showLoading("Sending mentor alert...");
@@ -1348,10 +1298,116 @@ async function analyseDepartment() {
         });
         
         fillGroupTable("dept-table", (res.table || []).slice(0, 120));
-        renderLabelDonut("dept-chart-perf-donut", res.label_counts?.performance || {}, "Performance Distribution");
-        renderLabelDonut("dept-chart-risk-donut", res.label_counts?.risk || {}, "Risk Distribution");
-        renderLabelDonut("dept-chart-drop-donut", res.label_counts?.dropout || {}, "Dropout Distribution");
-        render3DScatter("dept-chart-3d", res.scores || {performance: [], risk: [], dropout: []}, "3D Performance-Risk-Dropout");
+        
+        // 1. PIE CHART - Performance Levels + Risk + Dropout (4-5 segments)
+        if (document.getElementById("dept-chart-1")) {
+            const perfCounts = res.label_counts?.performance || {};
+            const highRisk = res.stats?.high_risk || 0;
+            const highDrop = res.stats?.high_dropout || 0;
+            const labels = [];
+            const values = [];
+            const colors = [];
+            
+            if (perfCounts.high) { labels.push('High Performance'); values.push(perfCounts.high); colors.push('#4CAF50'); }
+            if (perfCounts.medium) { labels.push('Medium Performance'); values.push(perfCounts.medium); colors.push('#FF9800'); }
+            if (perfCounts.low) { labels.push('Low Performance'); values.push(perfCounts.low); colors.push('#F44336'); }
+            labels.push('High Risk'); values.push(highRisk); colors.push('#E91E63');
+            labels.push('High Dropout'); values.push(highDrop); colors.push('#9C27B0');
+            
+            const layout = {
+                title: { text: "Department Overview", font: { size: 16, color: '#1976d2' } },
+                height: 380,
+                margin: { l: 40, r: 40, t: 60, b: 40 },
+                showlegend: true,
+                legend: { orientation: 'v', x: 1, y: 0.5 }
+            };
+            Plotly.newPlot("dept-chart-1", [{
+                labels: labels, values: values, type: "pie",
+                marker: { colors: colors },
+                textinfo: 'label+value', textposition: 'auto',
+                hovertemplate: '<b>%{label}</b><br>Count: %{value}<br>%{percent}<extra></extra>'
+            }], layout, window.defaultChartConfig);
+        }
+        
+        // 2. BAR CHART - Year-wise Performance Ranking
+        if (document.getElementById("dept-chart-2")) {
+            const yearPerf = {};
+            (res.table || []).forEach(s => {
+                const year = s.YEAR || 0;
+                if (!yearPerf[year]) yearPerf[year] = [];
+                yearPerf[year].push(s.performance_overall || 0);
+            });
+            const years = Object.keys(yearPerf).sort();
+            const avgPerfs = years.map(y => yearPerf[y].reduce((a,b) => a+b, 0) / yearPerf[y].length);
+            const layout = {
+                title: { text: "Year-wise Performance Ranking", font: { size: 16, color: '#1976d2' } },
+                xaxis: { title: "Year" }, yaxis: { title: "Average Performance %" },
+                height: 380, margin: { l: 60, r: 40, t: 60, b: 60 }
+            };
+            Plotly.newPlot("dept-chart-2", [{
+                x: years.map(y => `Year ${y}`), y: avgPerfs, type: "bar",
+                marker: { color: avgPerfs, colorscale: 'RdYlGn', showscale: true },
+                text: avgPerfs.map(v => v.toFixed(1) + '%'), textposition: 'outside',
+                hovertemplate: '<b>%{x}</b><br>Avg Performance: %{y:.1f}%<extra></extra>'
+            }], layout, window.defaultChartConfig);
+        }
+        
+        // 3. SCATTER 3D PLOT
+        if (document.getElementById("dept-chart-3")) {
+            const perfScores = res.scores?.performance || [];
+            const riskScores = res.scores?.risk || [];
+            const dropScores = res.scores?.dropout || [];
+            const layout = {
+                title: { text: "3D Performance-Risk-Dropout", font: { size: 16, color: '#1976d2' } },
+                scene: { xaxis: { title: "Performance" }, yaxis: { title: "Risk" }, zaxis: { title: "Dropout" } },
+                height: 380, margin: { l: 40, r: 40, t: 60, b: 40 }
+            };
+            Plotly.newPlot("dept-chart-3", [{
+                x: perfScores, y: riskScores, z: dropScores,
+                mode: "markers", type: "scatter3d",
+                marker: { size: 5, color: perfScores, colorscale: 'Viridis', showscale: true }
+            }], layout, window.defaultChartConfig);
+        }
+        
+        // 4. HEATMAP - Student Metrics Correlation
+        if (document.getElementById("dept-chart-4")) {
+            const students = (res.table || []).slice(0, 20);
+            const perfData = students.map(s => s.performance_overall || 0);
+            const attData = students.map(s => s.attendance_pct || 0);
+            const riskData = students.map(s => s.risk_score || 0);
+            const heatData = [perfData, attData, riskData];
+            const layout = {
+                title: { text: "Student Metrics Heatmap", font: { size: 16, color: '#1976d2' } },
+                xaxis: { title: "Students (Sample)" },
+                yaxis: { ticktext: ['Performance', 'Attendance', 'Risk'], tickvals: [0, 1, 2] },
+                height: 380, margin: { l: 60, r: 40, t: 60, b: 60 }
+            };
+            Plotly.newPlot("dept-chart-4", [{
+                z: heatData, type: "heatmap", colorscale: 'RdYlGn', showscale: true,
+                hovertemplate: 'Student %{x}<br>%{y}: %{z:.1f}%<extra></extra>'
+            }], layout, window.defaultChartConfig);
+        }
+        
+        // 5. RADAR CHART - Department Strengths
+        if (document.getElementById("dept-chart-5")) {
+            const avgPerf = res.stats?.avg_performance || 0;
+            const avgAtt = ((res.table || []).reduce((sum, s) => sum + (s.attendance_pct || 0), 0) / (res.table || []).length) || 0;
+            const avgInt = ((res.table || []).reduce((sum, s) => sum + (s.internal_pct || 0), 0) / (res.table || []).length) || 0;
+            const avgBeh = ((res.table || []).reduce((sum, s) => sum + (s.behavior_pct || 0), 0) / (res.table || []).length) || 0;
+            const avgRisk = ((res.table || []).reduce((sum, s) => sum + (s.risk_score || 0), 0) / (res.table || []).length) || 0;
+            const layout = {
+                title: { text: "Department Strengths Radar", font: { size: 16, color: '#1976d2' } },
+                polar: { radialaxis: { visible: true, range: [0, 100] } },
+                height: 400, margin: { l: 60, r: 60, t: 80, b: 60 }
+            };
+            Plotly.newPlot("dept-chart-5", [{
+                type: "scatterpolar",
+                r: [avgPerf, avgAtt, avgInt, avgBeh, 100-avgRisk],
+                theta: ["Performance", "Attendance", "Internal", "Behavior", "Safety"],
+                fill: "toself", marker: { color: '#1976d2' }, line: { color: '#1976d2', width: 2 },
+                hovertemplate: '<b>%{theta}</b><br>Score: %{r:.1f}%<extra></extra>'
+            }], layout, window.defaultChartConfig);
+        }
         
         // Add drill-down handlers for department charts
         setTimeout(() => {
@@ -1359,11 +1415,75 @@ async function analyseDepartment() {
         }, 1000);
         
         const summaryEl = document.getElementById("dept-summary");
+        const suggestionsEl = document.getElementById("dept-suggestions");
+        
         if (summaryEl) {
+            const avgPerf = st.avg_performance || 0;
+            const avgRisk = ((res.table || []).reduce((sum, s) => sum + (s.risk_score || 0), 0) / (res.table || []).length) || 0;
+            const avgDrop = ((res.table || []).reduce((sum, s) => sum + (s.dropout_score || 0), 0) / (res.table || []).length) || 0;
+            const avgAtt = ((res.table || []).reduce((sum, s) => sum + (s.attendance_pct || 0), 0) / (res.table || []).length) || 0;
+            
+            const perfLevel = avgPerf >= 75 ? "excellent" : avgPerf >= 60 ? "good" : avgPerf >= 50 ? "moderate" : "concerning";
+            const riskLevel = avgRisk >= 70 ? "high" : avgRisk >= 40 ? "moderate" : "low";
+            const attLevel = avgAtt >= 85 ? "excellent" : avgAtt >= 75 ? "good" : avgAtt >= 60 ? "moderate" : "critical";
+            
             summaryEl.innerHTML = `
-                <p>Total students analysed: <b>${st.total_students || 0}</b></p>
-                <p>Avg Performance: <b>${st.avg_performance || 0}%</b></p>
-                <p>High performers: <b>${st.high_performers || 0}</b> • High risk: <b>${st.high_risk || 0}</b> • High dropout: <b>${st.high_dropout || 0}</b></p>`;
+                <p><i class="fa-solid fa-chart-bar"></i> <strong>Department Overview:</strong> ${st.total_students || 0} students with ${perfLevel} average performance (${avgPerf.toFixed(1)}%). Department shows ${riskLevel} risk level with ${avgRisk.toFixed(1)}% average risk score.</p>
+                <p><i class="fa-solid fa-users"></i> <strong>Performance Breakdown:</strong> ${st.high_performers || 0} high performers, ${st.high_risk || 0} high-risk students, ${st.high_dropout || 0} high dropout risk students.</p>
+                <p><i class="fa-solid fa-calendar-check"></i> <strong>Attendance Status:</strong> ${attLevel} level with ${avgAtt.toFixed(1)}% average attendance. Dropout risk average: ${avgDrop.toFixed(1)}%.</p>
+            `;
+        }
+        
+        if (suggestionsEl) {
+            suggestionsEl.innerHTML = "";
+            const suggestions = [];
+            
+            const avgPerf = st.avg_performance || 0;
+            const avgRisk = ((res.table || []).reduce((sum, s) => sum + (s.risk_score || 0), 0) / (res.table || []).length) || 0;
+            const avgAtt = ((res.table || []).reduce((sum, s) => sum + (s.attendance_pct || 0), 0) / (res.table || []).length) || 0;
+            
+            if (avgPerf < 50) {
+                suggestions.push("<strong>CRITICAL:</strong> Department performance is concerning. Implement immediate remedial programs and intensive faculty training.");
+                suggestions.push("Conduct department-wide assessment to identify systemic issues affecting student performance.");
+            } else if (avgPerf < 60) {
+                suggestions.push("Department performance needs improvement. Implement peer tutoring and additional support sessions.");
+                suggestions.push("Increase faculty-student interaction through weekly office hours and mentoring programs.");
+            } else if (avgPerf >= 75) {
+                suggestions.push("<strong>Excellent!</strong> Department shows strong performance. Consider advanced learning opportunities and research projects.");
+                suggestions.push("Encourage top performers to participate in competitions and publish research papers.");
+            }
+            
+            if (avgRisk >= 70) {
+                suggestions.push("<strong>HIGH RISK ALERT:</strong> Establish emergency intervention task force with weekly monitoring for at-risk students.");
+                suggestions.push("Implement early warning system with automated alerts for declining performance trends.");
+            } else if (avgRisk >= 40) {
+                suggestions.push("Moderate risk level detected. Increase mentor-student interaction frequency to bi-weekly sessions.");
+                suggestions.push("Provide targeted support for students showing early warning signs of academic difficulty.");
+            }
+            
+            if (avgAtt < 60) {
+                suggestions.push("<strong>CRITICAL ATTENDANCE ISSUE:</strong> Investigate systemic causes and implement daily attendance monitoring with immediate follow-up.");
+                suggestions.push("Engage parents/guardians through automated attendance alerts and monthly progress meetings.");
+            } else if (avgAtt < 75) {
+                suggestions.push("Attendance below optimal level. Create structured improvement plan with weekly targets and incentives.");
+                suggestions.push("Implement attendance rewards program to motivate consistent participation.");
+            }
+            
+            if (st.high_dropout > st.total_students * 0.15) {
+                suggestions.push("<strong>DROPOUT RISK:</strong> Create retention task force to address dropout concerns through counseling and career guidance.");
+                suggestions.push("Implement student engagement programs including extracurricular activities and skill development workshops.");
+            }
+            
+            if (suggestions.length === 0) {
+                suggestions.push("Department performance is satisfactory. Continue current strategies and maintain regular monitoring.");
+                suggestions.push("Focus on continuous improvement through feedback collection and periodic assessments.");
+            }
+            
+            suggestions.forEach(s => {
+                const li = document.createElement("li");
+                li.innerHTML = `<i class="fa-solid fa-lightbulb" style="color: #1976d2; margin-right: 8px;"></i>${s}`;
+                suggestionsEl.appendChild(li);
+            });
         }
     } catch (error) {
         hideLoading();
@@ -1662,7 +1782,140 @@ async function viewStudentFromModal(rno) {
     }
 }
 
-function exportDeptCSV() { alert("Department CSV export functionality - implement backend endpoint"); }
+function exportDeptCSV() {
+    if (!document.getElementById("dept-report") || document.getElementById("dept-report").classList.contains("hidden")) {
+        alert("No department data to export");
+        return;
+    }
+    
+    const rows = Array.from(document.querySelectorAll("#dept-table tbody tr")).map(tr => {
+        const cells = tr.querySelectorAll("td");
+        return Array.from(cells).slice(0, -1).map(td => td.textContent.trim()).join(",");
+    });
+    
+    const headers = "RNO,Name,Year,Sem,Performance,Risk,Dropout,Perf%,Risk%,Drop%";
+    const csv = [headers, ...rows].join("\n");
+    downloadCSV(csv, "department_analytics.csv");
+}
+
+function exportDeptPDF() {
+    if (!document.getElementById("dept-report") || document.getElementById("dept-report").classList.contains("hidden")) {
+        alert("No department data to export");
+        return;
+    }
+    
+    showLoading("Generating PDF report...");
+    
+    setTimeout(async () => {
+        try {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            let yPos = 20;
+            
+            // Title
+            pdf.setFontSize(18);
+            pdf.setTextColor(25, 118, 210);
+            pdf.text('Department Analytics Report', pageWidth / 2, yPos, { align: 'center' });
+            yPos += 10;
+            
+            // Department info
+            pdf.setFontSize(12);
+            pdf.setTextColor(0, 0, 0);
+            const deptName = document.getElementById('d-dept')?.value || 'N/A';
+            const yearFilter = document.getElementById('d-year')?.value || 'All';
+            pdf.text(`Department: ${deptName.toUpperCase()} | Year: ${yearFilter}`, pageWidth / 2, yPos, { align: 'center' });
+            yPos += 15;
+            
+            // KPIs
+            pdf.setFontSize(14);
+            pdf.setTextColor(25, 118, 210);
+            pdf.text('Key Performance Indicators', 15, yPos);
+            yPos += 8;
+            
+            pdf.setFontSize(10);
+            pdf.setTextColor(0, 0, 0);
+            const kpis = [
+                document.getElementById('dept-kpi-total')?.innerText || '',
+                document.getElementById('dept-kpi-high-perf')?.innerText || '',
+                document.getElementById('dept-kpi-high-risk')?.innerText || '',
+                document.getElementById('dept-kpi-high-drop')?.innerText || ''
+            ];
+            kpis.forEach(kpi => {
+                if (kpi) {
+                    pdf.text(kpi.replace(/\n/g, ' '), 15, yPos);
+                    yPos += 6;
+                }
+            });
+            yPos += 10;
+            
+            // Capture charts
+            const charts = ['dept-chart-1', 'dept-chart-2', 'dept-chart-3', 'dept-chart-4', 'dept-chart-5'];
+            for (let i = 0; i < charts.length; i++) {
+                const chartEl = document.getElementById(charts[i]);
+                if (chartEl && chartEl.querySelector('.plotly')) {
+                    if (yPos > pageHeight - 80) {
+                        pdf.addPage();
+                        yPos = 20;
+                    }
+                    
+                    try {
+                        const canvas = await html2canvas(chartEl, { scale: 1, backgroundColor: '#ffffff' });
+                        const imgData = canvas.toDataURL('image/png');
+                        const imgWidth = pageWidth - 30;
+                        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                        pdf.addImage(imgData, 'PNG', 15, yPos, imgWidth, Math.min(imgHeight, 70));
+                        yPos += Math.min(imgHeight, 70) + 10;
+                    } catch (err) {
+                        console.warn(`Failed to capture chart ${charts[i]}:`, err);
+                    }
+                }
+            }
+            
+            // Summary
+            if (yPos > pageHeight - 60) {
+                pdf.addPage();
+                yPos = 20;
+            }
+            
+            pdf.setFontSize(14);
+            pdf.setTextColor(25, 118, 210);
+            pdf.text('Summary & Recommendations', 15, yPos);
+            yPos += 8;
+            
+            pdf.setFontSize(9);
+            pdf.setTextColor(0, 0, 0);
+            const summaryText = document.getElementById('dept-summary')?.innerText || 'No summary available';
+            const summaryLines = pdf.splitTextToSize(summaryText, pageWidth - 30);
+            summaryLines.forEach(line => {
+                if (yPos > pageHeight - 15) {
+                    pdf.addPage();
+                    yPos = 20;
+                }
+                pdf.text(line, 15, yPos);
+                yPos += 5;
+            });
+            
+            // Footer
+            const pageCount = pdf.internal.getNumberOfPages();
+            for (let i = 1; i <= pageCount; i++) {
+                pdf.setPage(i);
+                pdf.setFontSize(8);
+                pdf.setTextColor(128, 128, 128);
+                pdf.text(`Page ${i} of ${pageCount} | Generated by EduMetric | ${new Date().toLocaleDateString()}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+            }
+            
+            pdf.save(`department_${deptName}_report.pdf`);
+            hideLoading();
+            alert('PDF report generated successfully!');
+        } catch (error) {
+            hideLoading();
+            console.error('PDF generation error:', error);
+            alert('Failed to generate PDF. Please try again.');
+        }
+    }, 100);
+}
 function exportYearCSV() { alert("Year CSV export functionality - implement backend endpoint"); }
 function exportCollegeCSV() { alert("College CSV export functionality - implement backend endpoint"); }
 
@@ -2633,7 +2886,7 @@ function displayStudentModal(students, title) {
 }
 
 function addDepartmentDrilldownHandlers(dept, year) {
-    const charts = ['dept-chart-perf-donut', 'dept-chart-risk-donut', 'dept-chart-drop-donut', 'dept-chart-3d'];
+    const charts = ['dept-chart-1', 'dept-chart-3'];
     addUniversalDrilldownHandlers(charts, 'dept', dept);
 }
 

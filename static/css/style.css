@@ -1127,7 +1127,7 @@ select:focus {
     background: var(--low-bg);
 }
 
-/* Chart grid - Single row layout for analytics */
+/* Chart grid - Enhanced layout for student analytics */
 .chart-grid {
     display: grid;
     grid-template-columns: 1fr;
@@ -1146,21 +1146,46 @@ select:focus {
     padding: 20px;
 }
 
-/* For student mode - gauges in 2 columns, others single */
 #mode-student .chart-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+    width: 100%;
+}
+
+#mode-student .chart-row-2 {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
     gap: 25px;
 }
 
-#mode-student .gauge-row {
+#mode-student .chart-row-3 {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 25px;
+    justify-items: center;
+}
+
+#mode-student .chart-row-3 .chart-card {
+    height: 300px;
+    width: 100%;
+    max-width: 350px;
 }
 
 #mode-student .chart-card {
-    height: 450px;
+    height: 400px;
+    background: var(--card-bg);
+    border-radius: 18px;
+    border: var(--card-border);
+    box-shadow: var(--card-shadow);
+    padding: 20px;
+}
+
+@media (max-width: 1200px) {
+    #mode-student .chart-row-2,
+    #mode-student .chart-row-3 {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* For analytics modes - single column layout */
@@ -4965,4 +4990,34 @@ color: #1976d2;
     letter-spacing: 0.5px;
     margin-top: 5px;
     opacity: 0.8;
+}
+
+
+#mode-department .chart-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+}
+
+#mode-department .chart-row-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 25px;
+}
+
+#mode-department .chart-row-1 {
+    display: grid;
+    grid-template-columns: 1fr;
+}
+
+#mode-department .chart-card {
+    height: 420px;
+    width: 100%;
+    overflow: hidden;
+}
+
+@media (max-width: 1200px) {
+    #mode-department .chart-row-2 {
+        grid-template-columns: 1fr;
+    }
 }
